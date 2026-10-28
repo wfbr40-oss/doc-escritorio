@@ -1,0 +1,6 @@
+{
+  "name": "Gerador de Documentos Previdenciários",
+  "description": "Sistema de emissão e gestão do kit de documentos previdenciários em formato DOCX com histórico e retenção de 1 ano.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

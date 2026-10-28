@@ -1,0 +1,118 @@
+{
+  "kit": {
+    "id": "kit_previdenciario",
+    "name": "Kit Previdenciário Completo",
+    "description": "Conjunto com 7 templates e 1 formulário estático para advocacia previdenciária."
+  },
+  "documentos": [
+    {
+      "id": "doc_procuracao",
+      "name": "Procuração Ad Judicia et Extra",
+      "kind": "template",
+      "template_file_path": "molduras/procuracao_ad_judicia.docx",
+      "order_index": 1
+    },
+    {
+      "id": "doc_contrato_honorarios",
+      "name": "Contrato de Honorários Advocatícios Previdenciários",
+      "kind": "template",
+      "template_file_path": "molduras/contrato_honorarios.docx",
+      "order_index": 2,
+      "parametros": [
+        { "key": "minimo_honorarios", "label": "Mínimo de Honorários", "default_value": "14.000,00" },
+        { "key": "minimo_auxilio_acidente", "label": "Mínimo Auxílio-Acidente", "default_value": "8.000,00" },
+        { "key": "minimo_reconhecimento_periodo", "label": "Mínimo Reconhecimento de Período", "default_value": "6.000,00" }
+      ],
+      "clausulas": [
+        {
+          "key": "honorarios",
+          "name": "Cláusula de Honorários",
+          "variantes": [
+            {
+              "key": "padrao",
+              "name": "Padrão (30% + Mínimos)",
+              "is_default": true,
+              "text_paragraphs": [
+                "CLÁUSULA QUINTA (DOS HONORÁRIOS): O CONTRATANTE pagará aos CONTRATADOS o percentual de 30% (trinta por cento) sobre o proveito econômico integral alcançado em sede administrativa ou judicial.",
+                "PARÁGRAFO PRIMEIRO: Fica estipulado que, em qualquer hipótese de êxito na ação, os honorários não serão inferiores a R$ {{VALOR:minimo_honorarios}}, sendo o piso de R$ {{VALOR:minimo_auxilio_acidente}} para auxílio-acidente e R$ {{VALOR:minimo_reconhecimento_periodo}} para averbação de tempo rural/especial."
+              ]
+            },
+            {
+              "key": "auxilio_acidente_trafego_pago",
+              "name": "Auxílio-Acidente Tráfego Pago",
+              "is_default": false,
+              "text_paragraphs": [
+                "CLÁUSULA QUINTA: O CONTRATANTE pagará 30% sobre as parcelas vencidas e doze vincendas relativas à concessão do benefício de auxílio-acidente.",
+                "PARÁGRAFO ÚNICO: Fica ajustado o valor mínimo de R$ {{VALOR:minimo_honorarios}} a título de honorários advocatícios."
+              ]
+            }
+          ]
+        },
+        {
+          "key": "desistencia",
+          "name": "Cláusula de Desistência",
+          "variantes": [
+            {
+              "key": "padrao",
+              "name": "Desistência Padrão",
+              "is_default": true,
+              "text_paragraphs": [
+                "CLÁUSULA SEXTA: Em caso de desistência imotivada da ação, serão devidos honorários no valor integral da contratação."
+              ]
+            },
+            {
+              "key": "auxilio_acidente_trafego_pago",
+              "name": "Desistência Tráfego Pago",
+              "is_default": false,
+              "text_paragraphs": [
+                "CLÁUSULA SEXTA: Em caso de acordo direto ou desistência pelo CONTRATANTE, incidirá multa compensatória de 50% do valor mínimo pactuado."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "doc_hipossuficiencia",
+      "name": "Declaração de Hipossuficiência Econômica",
+      "kind": "template",
+      "template_file_path": "molduras/declaracao_hipossuficiencia.docx",
+      "order_index": 3
+    },
+    {
+      "id": "doc_renuncia_jef",
+      "name": "Termo de Renúncia aos Excedentes a 60 SM (JEF)",
+      "kind": "template",
+      "template_file_path": "molduras/termo_renuncia_jef.docx",
+      "order_index": 4
+    },
+    {
+      "id": "doc_requerimento_inss",
+      "name": "Requerimento Administrativo de Benefício (INSS)",
+      "kind": "template",
+      "template_file_path": "molduras/requerimento_administrativo.docx",
+      "order_index": 5
+    },
+    {
+      "id": "doc_ciencia_tramitacao",
+      "name": "Termo de Ciência e Notificação de Tramitação",
+      "kind": "template",
+      "template_file_path": "molduras/termo_ciencia_tramitacao.docx",
+      "order_index": 6
+    },
+    {
+      "id": "doc_declaracao_residencia",
+      "name": "Declaração de Residência e Domicílio",
+      "kind": "template",
+      "template_file_path": "molduras/declaracao_residencia.docx",
+      "order_index": 7
+    },
+    {
+      "id": "doc_cadastro_estatico",
+      "name": "Cadastro de Cliente (Ficha em Branco)",
+      "kind": "static",
+      "template_file_path": "molduras/cadastro_cliente_estatico.docx",
+      "order_index": 8
+    }
+  ]
+}
