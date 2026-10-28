@@ -31,7 +31,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push('/novo');
+      router.push('/');
       router.refresh();
     } catch {
       setErro('Erro de conexão com o servidor. Tente novamente.');
