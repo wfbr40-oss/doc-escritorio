@@ -61,8 +61,8 @@ export async function GET() {
     }
   }
 
-  // Lista dos logs de auditoria
-  const auditLogs = dataStore.auditLogs.slice(0, 50);
+  // Lista dos logs de auditoria (somente admin conforme política "Admin lê audit_log")
+  const auditLogs = session.role === 'admin' ? dataStore.auditLogs.slice(0, 50) : [];
 
   return NextResponse.json({
     documentos: docs,
