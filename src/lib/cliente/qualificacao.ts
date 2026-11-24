@@ -2,6 +2,8 @@ import { formatCpf } from './cpf';
 import { formatCep } from './cep';
 import { Genero, flexionar, estadoCivil, EstadoCivilValor } from './genero';
 
+export type { Genero, EstadoCivilValor };
+
 export interface ClienteRender {
   nome: string;
   genero: Genero;
@@ -35,8 +37,18 @@ export function buildQualificacao(
   }
 
   // Montagem do endereço sempre com "em", sem artigo antes da rua
-  const refText = c.referencia?.trim() ? `, ref.: ${c.referencia.trim()}` : '';
-  const enderecoBloco = `residente e ${domiciliadoFlex} em ${c.endereco.trim()}, n° ${c.numero.trim()}, Bairro ${c.bairro.trim()}, ${c.cidadeUf.trim()}, CEP ${cepFormatado}${refText}`;
+  const enderecoPartes: string[] = [`residente e ${domiciliadoFlex} em ${c.endereco.trim()}`];
+  const numeroTrim = c.numero?.trim();
+  if (numeroTrim) enderecoPartes.push(`n° ${numeroTrim}`);
+  const bairroTrim = c.bairro?.trim();
+  if (bairroTrim) enderecoPartes.push(`Bairro ${bairroTrim}`);
+  const cidadeTrim = c.cidadeUf?.trim();
+  if (cidadeTrim) enderecoPartes.push(cidadeTrim);
+  if (cepFormatado) enderecoPartes.push(`CEP ${cepFormatado}`);
+  const refTrim = c.referencia?.trim();
+  if (refTrim) enderecoPartes.push(`ref.: ${refTrim}`);
+
+  const enderecoBloco = enderecoPartes.join(', ');
 
   const profTrim = c.profissao?.trim();
 

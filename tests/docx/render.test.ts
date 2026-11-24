@@ -158,8 +158,40 @@ describe('Motor de DOCX (Tarefa 4)', () => {
     expect(xml).toContain(p1);
     expect(xml).toContain(p2);
 
-    // Verifica que existem ao menos 2 tags <w:p> para os parágrafos gerados
-    const countP = (xml?.match(/<w:p(?: [^>]*)?>/g) || []).length;
-    expect(countP).toBeGreaterThanOrEqual(4);
+    // Garante que os parágrafos anteriores não foram duplicados
+    expect(xml?.match(/CLÁUSULA PRIMEIRA: Do Objeto\./g)).toHaveLength(1);
+    expect(xml?.match(/CLÁUSULA TERCEIRA: Da Desistência\./g)).toHaveLength(1);
+
+    // Verifica que existem exatamente os parágrafos esperados (título + 1ª + 2 da cláusula + 3ª = 5)
+    const countP = (xml?.match(/<w:p(?=>|\s)/g) || []).length;
+    expect(countP).toBe(5);
+  });
+
+  it('lança MarcadorDesconhecidoError quando uma cláusula contém {{VALOR:...}} sem valor definido', async () => {
+    const moldura = await createTemplateDocx('CONTRATO', [
+      '{{CLAUSULA:honorarios}}',
+    ]);
+
+    const data: RenderData = {
+      cliente: clienteBase,
+      valores: {},
+      clausulas: {
+        honorarios: ['Valor mínimo: {{VALOR:nao_informado}}'],
+      },
+      assinatura: {
+        cidadeUf: 'Macapá/AP',
+        dataExtenso: '24 de novembro de 2026',
+      },
+    };
+
+    try {
+      await renderDocx(moldura, data);
+      throw new Error('Deveria ter lançado MarcadorDesconhecidoError');
+    } catch (err: unknown) {
+      expect(err).toBeInstanceOf(MarcadorDesconhecidoError);
+      if (err instanceof MarcadorDesconhecidoError) {
+        expect(err.marcadores).toContain('VALOR:nao_informado');
+      }
+    }
   });
 });

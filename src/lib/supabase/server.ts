@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { dataStore, INITIAL_PROFILES } from './store';
 
 export type ProfileRole = 'user' | 'admin';
 
@@ -19,15 +20,39 @@ export function setTestSessionProfile(profile: UserProfile | null | undefined) {
 }
 
 /**
+ * Retorna a chave pública do Supabase (publishable key ou anon key legada).
+ */
+export function getSupabasePublicKey(): string | undefined {
+  return (
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+}
+
+/**
+ * Indica se as variáveis reais do Supabase estão configuradas no ambiente.
+ */
+export function isSupabaseConfigured(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = getSupabasePublicKey();
+  return Boolean(
+    url &&
+      key &&
+      !url.includes('placeholder') &&
+      !key.includes('placeholder')
+  );
+}
+
+/**
  * Cria cliente Supabase para o lado do servidor usando @supabase/ssr
  */
 export async function createClient() {
   const cookieStore = await cookies();
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+  const supabaseKey = getSupabasePublicKey() || 'placeholder-anon-key';
 
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
+  return createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -56,13 +81,33 @@ export async function getSessionProfile(): Promise<UserProfile | null> {
 
   try {
     const cookieStore = await cookies();
-    // Se não há cookies de autenticação salvos
     const allCookies = cookieStore.getAll();
-    const hasAuthCookie = allCookies.some(
-      (c) => c.name.startsWith('sb-') || c.name === 'sb_session' || c.name === 'auth_session'
-    );
 
-    if (!hasAuthCookie) {
+    // Modo local/homologado sem variáveis de Supabase configuradas
+    if (!isSupabaseConfigured()) {
+      const sessionCookie = cookieStore.get('auth_session')?.value;
+      if (!sessionCookie) {
+        return null;
+      }
+
+      const localProfile =
+        dataStore.profiles.get(sessionCookie) ||
+        INITIAL_PROFILES.find((p) => p.id === sessionCookie || p.email === sessionCookie);
+
+      if (!localProfile) {
+        return null;
+      }
+
+      return {
+        id: localProfile.id,
+        name: localProfile.name,
+        role: localProfile.role,
+      };
+    }
+
+    // Modo Supabase Auth (@supabase/ssr)
+    const hasSupabaseCookie = allCookies.some((c) => c.name.startsWith('sb-'));
+    if (!hasSupabaseCookie) {
       return null;
     }
 

@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 /**
  * Store de dados com persistência em memória e sincronização com Supabase.
  * Fornece integridade referencial, controle de RLS e armazenamento privado para
@@ -82,6 +84,21 @@ export interface AuditLog {
   created_at: string;
 }
 
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${derived}`;
+}
+
+export function verifyPassword(password: string, stored: string): boolean {
+  const [salt, hashHex] = stored.split(':');
+  if (!salt || !hashHex) return false;
+  const derived = crypto.scryptSync(password, salt, 64);
+  const expected = Buffer.from(hashHex, 'hex');
+  if (derived.length !== expected.length) return false;
+  return crypto.timingSafeEqual(derived, expected);
+}
+
 // 3 Usuários Iniciais do Escritório
 export const INITIAL_PROFILES: Profile[] = [
   {
@@ -106,6 +123,14 @@ export const INITIAL_PROFILES: Profile[] = [
     created_at: '2026-10-27T10:00:00Z',
   },
 ];
+
+function createInitialCredentials(): Map<string, string> {
+  return new Map<string, string>([
+    ['amanda@escritorio.adv.br', hashPassword('Admin@2026!')],
+    ['carlos@escritorio.adv.br', hashPassword('Carlos@2026!')],
+    ['bruna@escritorio.adv.br', hashPassword('Bruna@2026!')],
+  ]);
+}
 
 // Kit Previdenciário Inicial
 export const INITIAL_KITS: Kit[] = [
@@ -294,6 +319,7 @@ export const INITIAL_PARAMETERS: Parameter[] = [
  */
 class MemoryDataStore {
   profiles = new Map<string, Profile>(INITIAL_PROFILES.map((p) => [p.id, p]));
+  localCredentials = createInitialCredentials();
   kits = new Map<string, Kit>(INITIAL_KITS.map((k) => [k.id, k]));
   documents = new Map<string, DocumentItem>(INITIAL_DOCUMENTS.map((d) => [d.id, d]));
   clauses = new Map<string, Clause>(INITIAL_CLAUSES.map((c) => [c.id, c]));
@@ -305,6 +331,7 @@ class MemoryDataStore {
 
   reset() {
     this.profiles = new Map(INITIAL_PROFILES.map((p) => [p.id, p]));
+    this.localCredentials = createInitialCredentials();
     this.kits = new Map(INITIAL_KITS.map((k) => [k.id, k]));
     this.documents = new Map(INITIAL_DOCUMENTS.map((d) => [d.id, d]));
     this.clauses = new Map(INITIAL_CLAUSES.map((c) => [c.id, c]));
@@ -316,4 +343,5 @@ class MemoryDataStore {
   }
 }
 
-export const dataStore = new MemoryDataStore();
+const globalForStore = globalThis as unknown as { __docGenStore?: MemoryDataStore };
+export const dataStore = globalForStore.__docGenStore ?? (globalForStore.__docGenStore = new MemoryDataStore());

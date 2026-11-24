@@ -57,7 +57,12 @@ export function validarMarcadores(
     }
     if (m.startsWith('VALOR:')) {
       const chave = m.slice(6);
-      if (!(chave in valores) || valores[chave] === undefined || valores[chave] === null) {
+      if (
+        !(chave in valores) ||
+        valores[chave] === undefined ||
+        valores[chave] === null ||
+        String(valores[chave]).trim() === ''
+      ) {
         desconhecidos.push(m);
       }
     } else if (m.startsWith('CLAUSULA:')) {

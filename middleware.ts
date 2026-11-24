@@ -13,28 +13,38 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  const proto = request.headers.get('x-forwarded-proto');
+  const isHttps = proto === 'https' || request.nextUrl.protocol === 'https:';
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   });
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  let hasSession = false;
-
-  // 1. Verifica se há cookies do Supabase SSR ou de sessão
-  const allCookies = request.cookies.getAll();
-  const authCookie = allCookies.find(
-    (c) => c.name.startsWith('sb-') || c.name === 'auth_session' || c.name === 'sb_session'
+  const supabaseConfigured = Boolean(
+    supabaseUrl &&
+      supabaseKey &&
+      !supabaseUrl.includes('placeholder') &&
+      !supabaseKey.includes('placeholder')
   );
 
-  if (authCookie && authCookie.value) {
-    // Se temos credenciais reais de Supabase configuradas
-    if (supabaseUrl && supabaseAnonKey && !supabaseUrl.includes('placeholder')) {
+  let hasSession = false;
+  const allCookies = request.cookies.getAll();
+
+  if (supabaseConfigured) {
+    const hasSupabaseCookie = allCookies.some(
+      (c) => (c.name.startsWith('sb-') || c.name === 'sb_session') && Boolean(c.value)
+    );
+
+    if (hasSupabaseCookie) {
       try {
-        const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+        const supabase = createServerClient(supabaseUrl!, supabaseKey!, {
           cookies: {
             getAll() {
               return request.cookies.getAll();
@@ -47,21 +57,34 @@ export async function middleware(request: NextRequest) {
                 request,
               });
               cookiesToSet.forEach(({ name, value, options }) =>
-                response.cookies.set(name, value, options)
+                response.cookies.set(name, value, {
+                  ...options,
+                  secure: isHttps ? true : options?.secure,
+                  sameSite: isHttps ? 'none' : options?.sameSite,
+                  ...(isHttps ? { partitioned: true } : {}),
+                  path: '/',
+                })
               );
             },
           },
         });
 
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         hasSession = !!user;
       } catch {
-        hasSession = true;
+        hasSession = false;
       }
-    } else {
-      // Modo local / teste
-      hasSession = true;
     }
+  } else {
+    // Modo local / teste sem Supabase externo configurado
+    const localAuthCookie = allCookies.find(
+      (c) =>
+        (c.name.startsWith('sb-') || c.name === 'auth_session' || c.name === 'sb_session') &&
+        Boolean(c.value)
+    );
+    hasSession = Boolean(localAuthCookie);
   }
 
   // Se for a rota /login
@@ -72,7 +95,7 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // Rotas de API públicas de autenticação (como /api/auth/login)
+  // Rotas de API públicas de autenticação (como /api/auth/login e /api/auth/signup)
   if (pathname.startsWith('/api/auth/')) {
     return response;
   }
@@ -86,7 +109,6 @@ export async function middleware(request: NextRequest) {
 
   // Cabeçalhos de segurança HTTP
   response.headers.set('X-Content-Type-Options', 'nosniff');
-  response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 
   return response;
