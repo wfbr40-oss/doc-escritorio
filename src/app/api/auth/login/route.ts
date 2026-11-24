@@ -81,6 +81,16 @@ export async function POST(req: NextRequest) {
         .eq('id', data.user.id)
         .single();
 
+      try {
+        await supabase.from('user_sessions').insert({ user_id: data.user.id });
+        await supabase
+          .from('profiles')
+          .update({ email: data.user.email || emailNorm })
+          .eq('id', data.user.id);
+      } catch {
+        // Ignora caso a migração 0006 ainda não tenha sido aplicada no banco
+      }
+
       const usuario = {
         id: data.user.id,
         name: profile?.name || data.user.user_metadata?.name || emailNorm.split('@')[0],
@@ -116,6 +126,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const sessionToken = dataStore.createSession(profile.id);
     logSeguro('login_sucesso', { userId: profile.id });
 
     const response = NextResponse.json({
@@ -128,7 +139,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    response.cookies.set('auth_session', profile.id, {
+    response.cookies.set('auth_session', sessionToken, {
       httpOnly: true,
       ...cookieFlags,
       path: '/',

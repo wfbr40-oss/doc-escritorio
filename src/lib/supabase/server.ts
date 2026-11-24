@@ -90,9 +90,14 @@ export async function getSessionProfile(): Promise<UserProfile | null> {
         return null;
       }
 
+      const userId = dataStore.getSessionUserId(sessionCookie);
+      if (!userId) {
+        return null;
+      }
+
       const localProfile =
-        dataStore.profiles.get(sessionCookie) ||
-        INITIAL_PROFILES.find((p) => p.id === sessionCookie || p.email === sessionCookie);
+        dataStore.profiles.get(userId) ||
+        INITIAL_PROFILES.find((p) => p.id === userId);
 
       if (!localProfile) {
         return null;

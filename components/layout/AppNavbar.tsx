@@ -1,8 +1,8 @@
 'use client';
 
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LogOut, Scale, Shield, User, FileText, History } from 'lucide-react';
+import { LogOut, Scale, FileText, History } from 'lucide-react';
 
 interface NavbarProps {
   usuario?: {
@@ -14,16 +14,16 @@ interface NavbarProps {
 }
 
 export function AppNavbar({ usuario }: NavbarProps) {
-  const router = useRouter();
   const pathname = usePathname();
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-      router.push('/login');
-      router.refresh();
-    } catch {
-      router.push('/login');
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+    } finally {
+      window.location.assign('/login');
     }
   };
 
@@ -33,7 +33,7 @@ export function AppNavbar({ usuario }: NavbarProps) {
         <div className="flex items-center justify-between gap-8 h-16">
           {/* Zone 1: Single text element wordmark */}
           <Link
-            href="/novo"
+            href="/"
             className="text-base font-semibold tracking-tight text-white flex items-center gap-2.5 whitespace-nowrap shrink-0 hover:text-amber-400 transition-colors"
           >
             <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
@@ -74,21 +74,14 @@ export function AppNavbar({ usuario }: NavbarProps) {
             {usuario ? (
               <div className="flex items-center gap-3">
                 <div className="text-right hidden sm:block">
-                  <div className="text-xs font-medium text-white flex items-center justify-end gap-1.5">
+                  <div className="text-xs font-medium text-white">
                     <span>{usuario.name}</span>
-                    {usuario.role === 'admin' ? (
-                      <span className="text-[10px] font-mono text-amber-400 bg-amber-400/10 px-1.5 py-0.2 rounded border border-amber-400/20">
-                        Admin
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.2 rounded border border-slate-700">
-                        Usuário
-                      </span>
-                    )}
                   </div>
-                  <div className="text-[11px] text-slate-400 font-mono">
-                    {usuario.email || 'escritorio.adv.br'}
-                  </div>
+                  {usuario.email && (
+                    <div className="text-[11px] text-slate-400 font-mono">
+                      {usuario.email}
+                    </div>
+                  )}
                 </div>
 
                 <button

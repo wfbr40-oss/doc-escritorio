@@ -5,6 +5,7 @@ import {
   getSupabasePublicKey,
   isSupabaseConfigured,
 } from '@/src/lib/supabase/server';
+import { dataStore } from '@/src/lib/supabase/store';
 
 export async function POST(req: NextRequest) {
   const proto = req.headers.get('x-forwarded-proto');
@@ -19,6 +20,11 @@ export async function POST(req: NextRequest) {
     sameSite: (isHttps ? 'none' : 'lax') as 'none' | 'lax',
     ...(isHttps ? { partitioned: true } : {}),
   };
+
+  const localToken = req.cookies.get('auth_session')?.value;
+  if (localToken) {
+    dataStore.revokeSession(localToken);
+  }
 
   const pendingCookies: Array<{
     name: string;
@@ -40,6 +46,20 @@ export async function POST(req: NextRequest) {
           },
         },
       });
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        try {
+          await supabase
+            .from('user_sessions')
+            .update({ revoked_at: new Date().toISOString() })
+            .eq('user_id', user.id)
+            .is('revoked_at', null);
+        } catch {
+          // Ignora caso a migração 0006 não tenha sido aplicada
+        }
+      }
       await supabase.auth.signOut();
     } catch {
       // Ignora erro de signOut remoto

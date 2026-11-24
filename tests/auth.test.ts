@@ -83,7 +83,9 @@ describe('Tarefa 1: base do projeto, login, cadastro e perfis', () => {
     expect(signupJson.usuario.name).toBe('Dra. Mariana Ferreira');
 
     const cookie = signupRes.cookies.get('auth_session');
-    expect(cookie?.value).toBe(signupJson.usuario.id);
+    expect(cookie?.value).toBeTruthy();
+    expect(cookie?.value).not.toBe(signupJson.usuario.id);
+    expect(dataStore.getSessionUserId(cookie!.value)).toBe(signupJson.usuario.id);
     expect(cookie?.sameSite).toBe('none');
     expect(cookie?.secure).toBe(true);
     expect(cookie?.partitioned).toBe(true);
@@ -139,7 +141,7 @@ describe('Tarefa 1: base do projeto, login, cadastro e perfis', () => {
     expect(json.erro).toBe('Credenciais inválidas. Verifique seu e-mail e senha.');
   });
 
-  it('login válido define cookie de sessão e middleware permite acessar / sem voltar para /login', async () => {
+  it('login válido define token opaco de sessão vinculado ao banco e middleware permite acessar / sem voltar para /login', async () => {
     const loginReq = new NextRequest('https://ais-dev.run.app/api/auth/login', {
       method: 'POST',
       headers: { 'x-forwarded-proto': 'https' },
@@ -149,7 +151,9 @@ describe('Tarefa 1: base do projeto, login, cadastro e perfis', () => {
     const loginRes = await loginHandler(loginReq);
     expect(loginRes.status).toBe(200);
     const cookie = loginRes.cookies.get('auth_session');
-    expect(cookie?.value).toBe('user-amanda-admin');
+    expect(cookie?.value).toBeTruthy();
+    expect(cookie?.value).not.toBe('user-amanda-admin');
+    expect(dataStore.getSessionUserId(cookie!.value)).toBe('user-amanda-admin');
     expect(cookie?.sameSite).toBe('none');
     expect(cookie?.secure).toBe(true);
     expect(cookie?.partitioned).toBe(true);
@@ -161,5 +165,8 @@ describe('Tarefa 1: base do projeto, login, cadastro e perfis', () => {
     expect(homeRes.status).toBe(200);
     expect(homeRes.headers.get('location')).toBeNull();
     expect(homeRes.headers.get('X-Frame-Options')).toBeNull();
+
+    dataStore.revokeSession(cookie!.value);
+    expect(dataStore.getSessionUserId(cookie!.value)).toBeNull();
   });
 });

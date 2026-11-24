@@ -84,6 +84,13 @@ export interface AuditLog {
   created_at: string;
 }
 
+export interface UserSessionRecord {
+  token: string;
+  user_id: string;
+  created_at: string;
+  expires_at: number;
+}
+
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
   const derived = crypto.scryptSync(password, salt, 64).toString('hex');
@@ -320,6 +327,7 @@ export const INITIAL_PARAMETERS: Parameter[] = [
 class MemoryDataStore {
   profiles = new Map<string, Profile>(INITIAL_PROFILES.map((p) => [p.id, p]));
   localCredentials = createInitialCredentials();
+  sessions = new Map<string, UserSessionRecord>();
   kits = new Map<string, Kit>(INITIAL_KITS.map((k) => [k.id, k]));
   documents = new Map<string, DocumentItem>(INITIAL_DOCUMENTS.map((d) => [d.id, d]));
   clauses = new Map<string, Clause>(INITIAL_CLAUSES.map((c) => [c.id, c]));
@@ -329,9 +337,35 @@ class MemoryDataStore {
   auditLogs: AuditLog[] = [];
   storageFiles = new Map<string, Uint8Array>();
 
+  createSession(userId: string, ttlMs = 7 * 24 * 60 * 60 * 1000): string {
+    const token = crypto.randomBytes(32).toString('hex');
+    this.sessions.set(token, {
+      token,
+      user_id: userId,
+      created_at: new Date().toISOString(),
+      expires_at: Date.now() + ttlMs,
+    });
+    return token;
+  }
+
+  getSessionUserId(token: string): string | null {
+    const record = this.sessions.get(token);
+    if (!record) return null;
+    if (record.expires_at <= Date.now()) {
+      this.sessions.delete(token);
+      return null;
+    }
+    return record.user_id;
+  }
+
+  revokeSession(token: string): void {
+    this.sessions.delete(token);
+  }
+
   reset() {
     this.profiles = new Map(INITIAL_PROFILES.map((p) => [p.id, p]));
     this.localCredentials = createInitialCredentials();
+    this.sessions.clear();
     this.kits = new Map(INITIAL_KITS.map((k) => [k.id, k]));
     this.documents = new Map(INITIAL_DOCUMENTS.map((d) => [d.id, d]));
     this.clauses = new Map(INITIAL_CLAUSES.map((c) => [c.id, c]));

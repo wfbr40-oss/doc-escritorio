@@ -187,7 +187,7 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
                     id="name"
                     name="name"
                     type="text"
-                    autoComplete="name"
+                    autoComplete="off"
                     required
                     minLength={2}
                     value={name}
@@ -211,7 +211,7 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
                   id="email"
                   name="email"
                   type="email"
-                  autoComplete={modo === 'login' ? 'username' : 'email'}
+                  autoComplete="off"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -233,7 +233,7 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
                   id="password"
                   name="password"
                   type="password"
-                  autoComplete={modo === 'login' ? 'current-password' : 'new-password'}
+                  autoComplete="off"
                   required
                   minLength={modo === 'signup' ? 6 : undefined}
                   value={password}
@@ -263,7 +263,7 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
                     id="confirmPassword"
                     name="confirmPassword"
                     type="password"
-                    autoComplete="new-password"
+                    autoComplete="off"
                     required
                     minLength={6}
                     value={confirmPassword}
@@ -316,9 +316,6 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
                     </div>
                     <div className="text-[11px] text-slate-400">amanda@escritorio.adv.br</div>
                   </div>
-                  <span className="text-[11px] font-medium text-amber-400 whitespace-nowrap">
-                    Admin
-                  </span>
                 </button>
 
                 <button
@@ -332,9 +329,6 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
                     </div>
                     <div className="text-[11px] text-slate-400">carlos@escritorio.adv.br</div>
                   </div>
-                  <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
-                    Usuário
-                  </span>
                 </button>
 
                 <button
@@ -348,16 +342,13 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
                     </div>
                     <div className="text-[11px] text-slate-400">bruna@escritorio.adv.br</div>
                   </div>
-                  <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
-                    Usuário
-                  </span>
                 </button>
               </div>
             </div>
           )}
 
           <p className="mt-5 text-[11px] text-slate-400 text-center leading-relaxed">
-            Novas contas são criadas com perfil padrão de usuário.
+            Cadastro e autenticação validados diretamente no banco de dados.
           </p>
         </div>
       </div>
