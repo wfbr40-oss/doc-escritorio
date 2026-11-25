@@ -1,6 +1,10 @@
+import JSZip from 'jszip';
 import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
 import {
   dataStore,
+  CustomMarker,
+  DEFAULT_QUALIFICACAO_STORE_CONTRATO,
+  DEFAULT_QUALIFICACAO_STORE_ROTULOS,
   DocumentItem,
   INITIAL_CLAUSES,
   INITIAL_DOCUMENTS,
@@ -11,10 +15,28 @@ import {
   Clause,
   ClauseVariant,
   Parameter,
+  QualificacaoConfig,
   TemplateContent,
 } from '@/src/lib/supabase/store';
 import { createTemplateDocx } from '@/src/lib/docx/builder';
 import { obterMolduraPadrao } from '@/src/lib/docx/default-molduras';
+import { desfragmentarMarcadoresXml } from '@/src/lib/docx/render';
+import {
+  extrairMarcadores,
+  MARCADORES_PADRAO_INFO,
+  MarcadorSistemaInfo,
+} from '@/src/lib/docx/marcadores';
+
+export const SYS_QUALIFICACAO_CONTRATO_ID = '__sys_qualificacao_contrato__';
+export const SYS_QUALIFICACAO_ROTULOS_ID = '__sys_qualificacao_rotulos__';
+export const SYS_QUALIFICACAO_CONTRATO_KEY = '__QUALIFICACAO_CONTRATO__';
+export const SYS_QUALIFICACAO_ROTULOS_KEY = '__QUALIFICACAO_ROTULOS__';
+export const CUSTOM_MARKER_KEY_PREFIX = '__CUSTOM__:';
+
+export interface DocumentValorMarkersInfo {
+  direct: string[];
+  byVariant: Record<string, string[]>;
+}
 
 export interface CatalogSnapshot {
   kits: Kit[];
@@ -22,9 +44,57 @@ export interface CatalogSnapshot {
   clauses: Clause[];
   variants: ClauseVariant[];
   parameters: Parameter[];
+  customMarkers: CustomMarker[];
+  qualificacaoConfig: QualificacaoConfig;
+  standardMarkers: MarcadorSistemaInfo[];
+  documentValorMarkers: Record<string, DocumentValorMarkersInfo>;
 }
 
 type SupabaseClientType = Awaited<ReturnType<typeof createClient>>;
+
+function normalizeLegacyParameterLabel(p: {
+  id: string;
+  key: string;
+  label: string;
+}): string {
+  if (
+    p.id === 'param_minimo_honorarios' ||
+    p.key === 'minimo_honorarios'
+  ) {
+    if (
+      !p.label ||
+      p.label === 'Mínimo de Honorários (R$)' ||
+      p.label === 'Mín. Honorários (R$)'
+    ) {
+      return 'Mín. Honorários 1';
+    }
+  }
+  if (
+    p.id === 'param_minimo_auxilio_acidente' ||
+    p.key === 'minimo_auxilio_acidente'
+  ) {
+    if (
+      !p.label ||
+      p.label.includes('Auxílio-Acidente') ||
+      p.label.includes('Auxilio-Acidente')
+    ) {
+      return 'Mín. Honorários 2';
+    }
+  }
+  if (
+    p.id === 'param_minimo_reconhecimento_periodo' ||
+    p.key === 'minimo_reconhecimento_periodo'
+  ) {
+    if (
+      !p.label ||
+      p.label.includes('Reconhecimento de Período') ||
+      p.label.includes('Período Rural')
+    ) {
+      return 'Mín. Honorários 3';
+    }
+  }
+  return p.label;
+}
 
 /**
  * Garante que o kit informado exista na tabela public.kits do Supabase antes de salvar documentos vinculados.
@@ -79,6 +149,30 @@ export async function ensureDocumentExistsInSupabase(
     );
 
   return { error };
+}
+
+/**
+ * Garante que ao menos um documento exista em public.documents para vincular parâmetros globais de sistema.
+ */
+export async function resolveAnchorDocumentIdForSupabase(
+  supabase: SupabaseClientType
+): Promise<{ documentId: string | null; error: { code?: string; message?: string } | null }> {
+  const docs = Array.from(dataStore.documents.values());
+  const preferred =
+    docs.find((d) => d.id === 'doc_contrato_honorarios') ||
+    docs[0] ||
+    INITIAL_DOCUMENTS[0];
+
+  if (!preferred) {
+    return { documentId: null, error: null };
+  }
+
+  const ensureRes = await ensureDocumentExistsInSupabase(supabase, preferred);
+  if (ensureRes.error) {
+    return { documentId: null, error: ensureRes.error };
+  }
+
+  return { documentId: preferred.id, error: null };
 }
 
 /**
@@ -265,19 +359,62 @@ export async function syncCatalogFromSupabase(options?: {
     }
 
     if (!paramsRes.error && paramsRes.data && paramsRes.data.length > 0) {
-      dataStore.parameters = new Map(
-        paramsRes.data.map((p) => [
-          p.id,
-          {
-            id: p.id,
-            document_id: p.document_id,
-            key: p.key,
-            label: p.label,
-            default_value: p.default_value,
-            created_at: p.created_at,
-          },
-        ])
-      );
+      const regularParams: Parameter[] = [];
+      const customList: CustomMarker[] = [];
+      let contratoTpl = DEFAULT_QUALIFICACAO_STORE_CONTRATO;
+      let rotulosTpl = DEFAULT_QUALIFICACAO_STORE_ROTULOS;
+
+      for (const p of paramsRes.data) {
+        if (
+          p.id === SYS_QUALIFICACAO_CONTRATO_ID ||
+          p.key === SYS_QUALIFICACAO_CONTRATO_KEY
+        ) {
+          if (p.default_value && p.default_value.trim()) {
+            contratoTpl = p.default_value;
+          }
+          continue;
+        }
+        if (
+          p.id === SYS_QUALIFICACAO_ROTULOS_ID ||
+          p.key === SYS_QUALIFICACAO_ROTULOS_KEY
+        ) {
+          if (p.default_value && p.default_value.trim()) {
+            rotulosTpl = p.default_value;
+          }
+          continue;
+        }
+        if (typeof p.key === 'string' && p.key.startsWith(CUSTOM_MARKER_KEY_PREFIX)) {
+          const rawKey = p.key.slice(CUSTOM_MARKER_KEY_PREFIX.length);
+          if (rawKey) {
+            customList.push({
+              id: p.id,
+              key: rawKey,
+              label: p.label,
+              value: p.default_value,
+              created_at: p.created_at,
+            });
+          }
+          continue;
+        }
+
+        regularParams.push({
+          id: p.id,
+          document_id: p.document_id,
+          key: p.key,
+          label: normalizeLegacyParameterLabel(p),
+          default_value: p.default_value,
+          created_at: p.created_at,
+        });
+      }
+
+      if (regularParams.length > 0) {
+        dataStore.parameters = new Map(regularParams.map((p) => [p.id, p]));
+      }
+      dataStore.customMarkers = new Map(customList.map((m) => [m.id, m]));
+      dataStore.qualificacaoConfig = {
+        contrato: contratoTpl,
+        rotulos: rotulosTpl,
+      };
     }
   } catch {
     // Mantém catálogo em memória caso o Supabase esteja indisponível ou sem tabelas semeadas
@@ -292,6 +429,84 @@ export function isKitAllowedForUser(
   if (user.role === 'admin') return true;
   if (!user.allowed_kit_ids || user.allowed_kit_ids.length === 0) return true;
   return user.allowed_kit_ids.includes(kitId);
+}
+
+function collectValorKeysFromText(text: string): string[] {
+  const markers = extrairMarcadores(text);
+  const result: string[] = [];
+  for (const m of markers) {
+    if (m.startsWith('VALOR:')) {
+      const key = m.slice(6).trim();
+      if (key && !result.includes(key)) {
+        result.push(key);
+      }
+    }
+  }
+  return result;
+}
+
+export async function extractDocumentValorMarkers(
+  doc: DocumentItem,
+  clauses: Clause[],
+  variants: ClauseVariant[]
+): Promise<DocumentValorMarkersInfo> {
+  if (doc.kind === 'static') {
+    return { direct: [], byVariant: {} };
+  }
+
+  const direct: string[] = [];
+  const addDirect = (keys: string[]) => {
+    for (const k of keys) {
+      if (!direct.includes(k)) direct.push(k);
+    }
+  };
+
+  try {
+    const storageKey = doc.template_file_path || `molduras/${doc.id}.docx`;
+    const hasCustomBytes = dataStore.storageFiles.has(storageKey);
+
+    if (!hasCustomBytes && doc.template_content?.paragrafos?.length) {
+      const joined = [
+        doc.template_content.titulo || '',
+        doc.template_content.subtitulo || '',
+        ...doc.template_content.paragrafos,
+      ].join('\n');
+      addDirect(collectValorKeysFromText(joined));
+    } else {
+      const bytes = await obterMolduraDocumento(doc);
+      const zip = await JSZip.loadAsync(bytes);
+      const partNames = Object.keys(zip.files).filter(
+        (name) =>
+          name === 'word/document.xml' ||
+          name.startsWith('word/header') ||
+          name.startsWith('word/footer')
+      );
+      for (const partName of partNames) {
+        const file = zip.file(partName);
+        if (!file) continue;
+        const xml = desfragmentarMarcadoresXml(await file.async('string'));
+        addDirect(collectValorKeysFromText(xml));
+      }
+    }
+  } catch {
+    // Caso não seja possível inspecionar a moldura agora, mantém direto vazio sem falhar catálogo
+  }
+
+  const byVariant: Record<string, string[]> = {};
+  const docClauses = clauses.filter((c) => c.document_id === doc.id);
+  for (const clause of docClauses) {
+    const clauseVariants = variants.filter((v) => v.clause_id === clause.id);
+    for (const variant of clauseVariants) {
+      const list = byVariant[variant.key] || [];
+      const found = collectValorKeysFromText((variant.text_paragraphs || []).join('\n'));
+      for (const k of found) {
+        if (!list.includes(k)) list.push(k);
+      }
+      byVariant[variant.key] = list;
+    }
+  }
+
+  return { direct, byVariant };
 }
 
 export async function getCatalogForUser(user?: {
@@ -324,12 +539,27 @@ export async function getCatalogForUser(user?: {
     docIds.has(p.document_id)
   );
 
+  const customMarkers = Array.from(dataStore.customMarkers.values()).sort((a, b) =>
+    a.key.localeCompare(b.key)
+  );
+
+  const entries = await Promise.all(
+    documents.map(async (doc) => {
+      const info = await extractDocumentValorMarkers(doc, clauses, variants);
+      return [doc.id, info] as const;
+    })
+  );
+
   return {
     kits,
     documents,
     clauses,
     variants,
     parameters,
+    customMarkers,
+    qualificacaoConfig: { ...dataStore.qualificacaoConfig },
+    standardMarkers: MARCADORES_PADRAO_INFO,
+    documentValorMarkers: Object.fromEntries(entries),
   };
 }
 

@@ -331,6 +331,15 @@ export async function DELETE(
 
     if (isSupabaseConfigured()) {
       const supabase = await createClient();
+      const outroDocId = Array.from(dataStore.documents.keys()).find((docId) => docId !== id);
+      if (outroDocId) {
+        await supabase
+          .from('parameters')
+          .update({ document_id: outroDocId })
+          .eq('document_id', id)
+          .or('id.like.__sys_%,key.like.__CUSTOM__:%');
+      }
+
       const { error } = await supabase.from('documents').delete().eq('id', id);
       if (error) {
         return NextResponse.json(

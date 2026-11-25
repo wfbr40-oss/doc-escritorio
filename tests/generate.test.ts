@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import JSZip from 'jszip';
 import { POST as generateHandler } from '../src/app/api/generate/route';
+import { GET as historyHandler } from '../src/app/api/history/route';
 import { dataStore } from '../src/lib/supabase/store';
 import { setTestSession } from '../src/lib/supabase/session';
 import { NextRequest } from 'next/server';
@@ -139,5 +140,32 @@ describe('Geração de Documentos e API (Tarefa 6)', () => {
     const kitZip = await JSZip.loadAsync(zipBytes!);
     const arquivosNoZip = Object.keys(kitZip.files).filter((f) => f.endsWith('.docx'));
     expect(arquivosNoZip).toHaveLength(8);
+  });
+
+  it('persiste numeroInterno do cliente e retorna ao lado do cliente no histórico', async () => {
+    const req = new NextRequest('http://localhost:3000/api/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        cliente: {
+          ...clienteF,
+          numeroInterno: 'INT-2026-991',
+        },
+        documentos: [{ documentId: 'doc_procuracao' }],
+      }),
+    });
+
+    const res = await generateHandler(req);
+    expect(res.status).toBe(200);
+
+    const histRes = await historyHandler();
+    expect(histRes.status).toBe(200);
+    const histJson = await histRes.json();
+
+    expect(histJson.lotes).toHaveLength(1);
+    expect(histJson.lotes[0].client_masked_name).toBe('Maria Silva');
+    expect(histJson.lotes[0].client_internal_number).toBe('INT-2026-991');
+
+    expect(histJson.documentos).toHaveLength(1);
+    expect(histJson.documentos[0].client_internal_number).toBe('INT-2026-991');
   });
 });

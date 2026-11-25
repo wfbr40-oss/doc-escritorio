@@ -13,6 +13,9 @@ import {
 } from '@/src/app/api/admin/models/[id]/route';
 import { POST as createUserPost } from '@/src/app/api/admin/users/route';
 import { PATCH as patchUser } from '@/src/app/api/admin/users/[id]/route';
+import { POST as createMarkerPost } from '@/src/app/api/admin/markers/route';
+import { PATCH as patchMarker, DELETE as deleteMarker } from '@/src/app/api/admin/markers/[id]/route';
+import { PUT as putQualification } from '@/src/app/api/admin/qualification/route';
 import { GET as catalogGet } from '@/src/app/api/catalog/route';
 import { POST as generatePost } from '@/src/app/api/generate/route';
 
@@ -302,5 +305,166 @@ describe('Administração de Modelos, Kits e Usuários', () => {
     const bodyValid = await resValid.json();
     expect(dataStore.documents.has(bodyValid.document.id)).toBe(true);
     expect(dataStore.storageFiles.has(bodyValid.document.template_file_path)).toBe(true);
+  });
+
+  it('restringe edição de marcadores e qualificação apenas a administradores e aplica alterações no DOCX e catálogo', async () => {
+    setTestSession({
+      id: 'user-carlos-adv',
+      name: 'Dr. Carlos Mendes',
+      role: 'user',
+    });
+
+    const userMarkerRes = await createMarkerPost(
+      new NextRequest('http://localhost:3000/api/admin/markers', {
+        method: 'POST',
+        body: JSON.stringify({ kind: 'custom', key: 'OAB_SOC', label: 'OAB', value: '123' }),
+      })
+    );
+    expect(userMarkerRes.status).toBe(403);
+
+    const userQualRes = await putQualification(
+      new NextRequest('http://localhost:3000/api/admin/qualification', {
+        method: 'PUT',
+        body: JSON.stringify({
+          contrato: '{{CLIENTE_NOME}}, CPF {{CLIENTE_CPF}}',
+          rotulos: 'CPF: {{CLIENTE_CPF}}',
+        }),
+      })
+    );
+    expect(userQualRes.status).toBe(403);
+
+    // Loga como administrador
+    setTestSession({
+      id: 'user-amanda-admin',
+      name: 'Dra. Amanda Oliveira',
+      role: 'admin',
+    });
+
+    // 1. Verifica catálogo inicial (labels numerados e contagem por variante)
+    const initialCatRes = await catalogGet();
+    expect(initialCatRes.status).toBe(200);
+    const initialCat = await initialCatRes.json();
+    const honParamLabels = (initialCat.parameters as Array<{ label: string }>).map((p) => p.label);
+    expect(honParamLabels).toEqual([
+      'Mín. Honorários 1',
+      'Mín. Honorários 2',
+      'Mín. Honorários 3',
+    ]);
+    expect(initialCat.documentValorMarkers.doc_contrato_honorarios.byVariant.padrao).toHaveLength(3);
+    expect(
+      initialCat.documentValorMarkers.doc_contrato_honorarios.byVariant.auxilio_acidente_trafego_pago
+    ).toHaveLength(1);
+
+    // 2. Edita texto de qualificação e cria marcador personalizado
+    const qualRes = await putQualification(
+      new NextRequest('http://localhost:3000/api/admin/qualification', {
+        method: 'PUT',
+        body: JSON.stringify({
+          contrato: 'QUALIFICACAO_ADMIN {{CLIENTE_NOME}} - CPF {{CLIENTE_CPF}} - {{CLIENTE_CIDADE_UF}}',
+          rotulos: 'CPF: {{CLIENTE_CPF}}',
+        }),
+      })
+    );
+    expect(qualRes.status).toBe(200);
+
+    const customCreateRes = await createMarkerPost(
+      new NextRequest('http://localhost:3000/api/admin/markers', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'custom',
+          key: 'ESCRITORIO_OAB',
+          label: 'Registro OAB',
+          value: 'OAB/AP 9999',
+        }),
+      })
+    );
+    expect(customCreateRes.status).toBe(201);
+    const customMarkerId = (await customCreateRes.json()).customMarker.id as string;
+
+    const customPatchRes = await patchMarker(
+      new NextRequest(`http://localhost:3000/api/admin/markers/${customMarkerId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ value: 'OAB/AP 8888' }),
+      }),
+      { params: Promise.resolve({ id: customMarkerId }) }
+    );
+    expect(customPatchRes.status).toBe(200);
+
+    // 3. Cria novo kit e modelo com 2 marcadores de valor e marcador personalizado
+    const kitRes = await createKitPost(
+      new NextRequest('http://localhost:3000/api/admin/kits', {
+        method: 'POST',
+        body: JSON.stringify({ name: 'Kit Teste Marcadores' }),
+      })
+    );
+    const novoKitId = (await kitRes.json()).kit.id as string;
+
+    const modelRes = await createModelPost(
+      new NextRequest('http://localhost:3000/api/admin/models', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Contrato 2 Valores',
+          kit_id: novoKitId,
+          kind: 'template',
+          paragrafos: [
+            'Parte: {{CLIENTE_QUALIFICACAO}}',
+            'Escritório: {{ESCRITORIO_OAB}}',
+            'Piso 1: {{VALOR:piso_1}} e Piso 2: {{VALOR:piso_2}}',
+          ],
+        }),
+      })
+    );
+    const novoDocId = (await modelRes.json()).document.id as string;
+
+    const catAfter = await (await catalogGet()).json();
+    expect(catAfter.documentValorMarkers[novoDocId].direct).toEqual(['piso_1', 'piso_2']);
+
+    // 4. Gera documento e confirma qualificação editada + marcador personalizado + 2 valores
+    const genRes = await generatePost(
+      new NextRequest('http://localhost:3000/api/generate', {
+        method: 'POST',
+        body: JSON.stringify({
+          kitId: novoKitId,
+          cliente: {
+            nome: 'Maria Francisca da Silva',
+            genero: 'F',
+            nacionalidade: 'brasileira',
+            estadoCivil: 'solteiro',
+            cpf: '529.982.247-25',
+            endereco: 'Rua das Flores',
+            numero: '120',
+            bairro: 'Centro',
+            cidadeUf: 'Macapá/AP',
+            cep: '68900-010',
+          },
+          documentos: [
+            {
+              documentId: novoDocId,
+              valores: { piso_1: '2.500,00', piso_2: '4.500,00' },
+            },
+          ],
+        }),
+      })
+    );
+    expect(genRes.status).toBe(200);
+    const genData = await genRes.json();
+    const docGerado = dataStore.generatedDocs.get(genData.itens[0].id);
+    const zip = await JSZip.loadAsync(docGerado!.file_bytes!);
+    const docXml = await zip.file('word/document.xml')!.async('string');
+
+    expect(docXml).toContain('QUALIFICACAO_ADMIN Maria Francisca da Silva');
+    expect(docXml).toContain('OAB/AP 8888');
+    expect(docXml).toContain('2.500,00');
+    expect(docXml).toContain('4.500,00');
+
+    // 5. Exclui marcador personalizado
+    const delRes = await deleteMarker(
+      new NextRequest(`http://localhost:3000/api/admin/markers/${customMarkerId}`, {
+        method: 'DELETE',
+      }),
+      { params: Promise.resolve({ id: customMarkerId }) }
+    );
+    expect(delRes.status).toBe(200);
+    expect(dataStore.customMarkers.has(customMarkerId)).toBe(false);
   });
 });

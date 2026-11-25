@@ -67,6 +67,19 @@ export interface Parameter {
   created_at: string;
 }
 
+export interface CustomMarker {
+  id: string;
+  key: string;
+  label: string;
+  value: string;
+  created_at: string;
+}
+
+export interface QualificacaoConfig {
+  contrato: string;
+  rotulos: string;
+}
+
 export interface GeneratedDocument {
   id: string;
   batch_id: string;
@@ -75,6 +88,7 @@ export interface GeneratedDocument {
   user_id: string;
   user_name: string;
   client_masked_name: string;
+  client_internal_number?: string;
   file_path: string;
   status: 'ativo' | 'expirado';
   snapshot: Record<string, unknown> | null;
@@ -302,13 +316,13 @@ export const INITIAL_VARIANTS: ClauseVariant[] = [
   },
 ];
 
-// Parâmetros do contrato com valores oficiais
+// Parâmetros do contrato com valores oficiais (labels numerados sem especificação)
 export const INITIAL_PARAMETERS: Parameter[] = [
   {
     id: 'param_minimo_honorarios',
     document_id: 'doc_contrato_honorarios',
     key: 'minimo_honorarios',
-    label: 'Mínimo de Honorários (R$)',
+    label: 'Mín. Honorários 1',
     default_value: '14.000,00',
     created_at: '2026-10-27T10:00:00Z',
   },
@@ -316,7 +330,7 @@ export const INITIAL_PARAMETERS: Parameter[] = [
     id: 'param_minimo_auxilio_acidente',
     document_id: 'doc_contrato_honorarios',
     key: 'minimo_auxilio_acidente',
-    label: 'Mínimo Auxílio-Acidente (R$)',
+    label: 'Mín. Honorários 2',
     default_value: '8.000,00',
     created_at: '2026-10-27T10:00:00Z',
   },
@@ -324,11 +338,17 @@ export const INITIAL_PARAMETERS: Parameter[] = [
     id: 'param_minimo_reconhecimento_periodo',
     document_id: 'doc_contrato_honorarios',
     key: 'minimo_reconhecimento_periodo',
-    label: 'Mínimo Reconhecimento de Período (R$)',
+    label: 'Mín. Honorários 3',
     default_value: '6.000,00',
     created_at: '2026-10-27T10:00:00Z',
   },
 ];
+
+export const DEFAULT_QUALIFICACAO_STORE_CONTRATO =
+  '{{CLIENTE_NOME}}, {{CLIENTE_NACIONALIDADE}}, {{CLIENTE_ESTADO_CIVIL}}, profissão {{CLIENTE_PROFISSAO}}, {{INSCRITO_FLEX}} no CPF sob o n° {{CLIENTE_CPF}}, residente e {{DOMICILIADO_FLEX}} em {{CLIENTE_ENDERECO}}, n° {{CLIENTE_NUMERO}}, Bairro {{CLIENTE_BAIRRO}}, {{CLIENTE_CIDADE_UF}}, CEP {{CLIENTE_CEP}}, ref.: {{CLIENTE_REFERENCIA}}';
+
+export const DEFAULT_QUALIFICACAO_STORE_ROTULOS =
+  'Nacionalidade: {{CLIENTE_NACIONALIDADE}}, Estado civil: {{CLIENTE_ESTADO_CIVIL}}, Profissão: {{CLIENTE_PROFISSAO}}, CPF: {{CLIENTE_CPF}}, Endereço: residente e {{DOMICILIADO_FLEX}} em {{CLIENTE_ENDERECO}}, n° {{CLIENTE_NUMERO}}, Bairro {{CLIENTE_BAIRRO}}, {{CLIENTE_CIDADE_UF}}, CEP {{CLIENTE_CEP}}, ref.: {{CLIENTE_REFERENCIA}}';
 
 /**
  * Storage central para estado compartilhado
@@ -342,6 +362,11 @@ class MemoryDataStore {
   clauses = new Map<string, Clause>(INITIAL_CLAUSES.map((c) => [c.id, c]));
   variants = new Map<string, ClauseVariant>(INITIAL_VARIANTS.map((v) => [v.id, v]));
   parameters = new Map<string, Parameter>(INITIAL_PARAMETERS.map((p) => [p.id, p]));
+  customMarkers = new Map<string, CustomMarker>();
+  qualificacaoConfig: QualificacaoConfig = {
+    contrato: DEFAULT_QUALIFICACAO_STORE_CONTRATO,
+    rotulos: DEFAULT_QUALIFICACAO_STORE_ROTULOS,
+  };
   generatedDocs = new Map<string, GeneratedDocument>();
   auditLogs: AuditLog[] = [];
   storageFiles = new Map<string, Uint8Array>();
@@ -380,6 +405,11 @@ class MemoryDataStore {
     this.clauses = new Map(INITIAL_CLAUSES.map((c) => [c.id, c]));
     this.variants = new Map(INITIAL_VARIANTS.map((v) => [v.id, v]));
     this.parameters = new Map(INITIAL_PARAMETERS.map((p) => [p.id, p]));
+    this.customMarkers.clear();
+    this.qualificacaoConfig = {
+      contrato: DEFAULT_QUALIFICACAO_STORE_CONTRATO,
+      rotulos: DEFAULT_QUALIFICACAO_STORE_ROTULOS,
+    };
     this.generatedDocs.clear();
     this.auditLogs = [];
     this.storageFiles.clear();

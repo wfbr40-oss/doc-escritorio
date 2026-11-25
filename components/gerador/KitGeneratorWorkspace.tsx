@@ -79,6 +79,108 @@ const DOCUMENTOS_KIT: DocumentoCatalogo[] = [
   },
 ];
 
+interface ClauseCatalogo {
+  id: string;
+  document_id: string;
+  name: string;
+  key: string;
+}
+
+interface VariantCatalogo {
+  id: string;
+  clause_id: string;
+  key: string;
+  name: string;
+  is_default: boolean;
+}
+
+interface ParameterCatalogo {
+  id: string;
+  document_id: string;
+  key: string;
+  label: string;
+  default_value: string;
+}
+
+interface DocumentValorMarkersInfo {
+  direct: string[];
+  byVariant: Record<string, string[]>;
+}
+
+const DEFAULT_VALOR_MARKERS_BY_DOC: Record<string, DocumentValorMarkersInfo> = {
+  doc_contrato_honorarios: {
+    direct: [],
+    byVariant: {
+      padrao: ['minimo_honorarios', 'minimo_auxilio_acidente', 'minimo_reconhecimento_periodo'],
+      auxilio_acidente_trafego_pago: ['minimo_honorarios'],
+    },
+  },
+};
+
+const DEFAULT_CLAUSES: ClauseCatalogo[] = [
+  {
+    id: 'clause_honorarios',
+    document_id: 'doc_contrato_honorarios',
+    name: 'Cláusula de Honorários',
+    key: 'honorarios',
+  },
+];
+
+const DEFAULT_VARIANTS: VariantCatalogo[] = [
+  {
+    id: 'variant_honorarios_padrao',
+    clause_id: 'clause_honorarios',
+    key: 'padrao',
+    name: 'Padrão (30% + Pisos Mínimos)',
+    is_default: true,
+  },
+  {
+    id: 'variant_honorarios_trafego',
+    clause_id: 'clause_honorarios',
+    key: 'auxilio_acidente_trafego_pago',
+    name: 'Auxílio-Acidente Tráfego Pago (30% vencidas + 12 vincendas)',
+    is_default: false,
+  },
+];
+
+const DEFAULT_PARAMETERS: ParameterCatalogo[] = [
+  {
+    id: 'param_minimo_honorarios',
+    document_id: 'doc_contrato_honorarios',
+    key: 'minimo_honorarios',
+    label: 'Mín. Honorários 1',
+    default_value: '14.000,00',
+  },
+  {
+    id: 'param_minimo_auxilio_acidente',
+    document_id: 'doc_contrato_honorarios',
+    key: 'minimo_auxilio_acidente',
+    label: 'Mín. Honorários 2',
+    default_value: '8.000,00',
+  },
+  {
+    id: 'param_minimo_reconhecimento_periodo',
+    document_id: 'doc_contrato_honorarios',
+    key: 'minimo_reconhecimento_periodo',
+    label: 'Mín. Honorários 3',
+    default_value: '6.000,00',
+  },
+];
+
+function isGenericOrLegacyHonorariosLabel(key: string, label?: string): boolean {
+  if (key.startsWith('minimo_')) return true;
+  if (!label) return true;
+  const lower = label.toLowerCase();
+  return (
+    lower.includes('honorários') ||
+    lower.includes('honorarios') ||
+    lower.includes('auxílio-acidente') ||
+    lower.includes('auxilio-acidente') ||
+    lower.includes('período') ||
+    lower.includes('periodo')
+  );
+}
+
 interface ResultadoGeracao {
   batchId: string;
   expiresAt: string;
@@ -94,6 +196,7 @@ interface ResultadoGeracao {
 
 export function KitGeneratorWorkspace() {
   const [nome, setNome] = useState('');
+  const [numeroInterno, setNumeroInterno] = useState('');
   const [genero, setGenero] = useState<Genero>('F');
   const [nacionalidade, setNacionalidade] = useState('brasileira');
   const [estadoCivil, setEstadoCivil] = useState<EstadoCivilValor>('solteiro');
@@ -106,12 +209,12 @@ export function KitGeneratorWorkspace() {
   const [cep, setCep] = useState('');
   const [referencia, setReferencia] = useState('');
 
-  const [varianteContrato, setVarianteContrato] = useState<
-    'padrao' | 'auxilio_acidente_trafego_pago'
-  >('padrao');
-  const [minimoHonorarios, setMinimoHonorarios] = useState('14.000,00');
-  const [minimoAuxilioAcidente, setMinimoAuxilioAcidente] = useState('8.000,00');
-  const [minimoReconhecimentoPeriodo, setMinimoReconhecimentoPeriodo] = useState('6.000,00');
+  const [varianteContrato, setVarianteContrato] = useState<string>('padrao');
+  const [valoresPersonalizados, setValoresPersonalizados] = useState<Record<string, string>>({
+    minimo_honorarios: '14.000,00',
+    minimo_auxilio_acidente: '8.000,00',
+    minimo_reconhecimento_periodo: '6.000,00',
+  });
   const [assinaturaCidadeUf, setAssinaturaCidadeUf] = useState('');
   const [assinaturaDataExtenso, setAssinaturaDataExtenso] = useState(() =>
     formatDataExtenso(new Date())
@@ -126,6 +229,15 @@ export function KitGeneratorWorkspace() {
   const [kitSelecionadoId, setKitSelecionadoId] = useState<string>('kit_previdenciario');
   const [todosDocumentos, setTodosDocumentos] = useState<DocumentoCatalogo[]>(
     DOCUMENTOS_KIT.map((d) => ({ ...d, kit_id: 'kit_previdenciario' }))
+  );
+  const [catalogClauses, setCatalogClauses] = useState<ClauseCatalogo[]>(DEFAULT_CLAUSES);
+  const [catalogVariants, setCatalogVariants] = useState<VariantCatalogo[]>(DEFAULT_VARIANTS);
+  const [catalogParameters, setCatalogParameters] = useState<ParameterCatalogo[]>(DEFAULT_PARAMETERS);
+  const [documentValorMarkers, setDocumentValorMarkers] = useState<
+    Record<string, DocumentValorMarkersInfo>
+  >(DEFAULT_VALOR_MARKERS_BY_DOC);
+  const [qualificacaoContratoTemplate, setQualificacaoContratoTemplate] = useState<string | null>(
+    null
   );
 
   const [selecionados, setSelecionados] = useState<string[]>(
@@ -156,6 +268,30 @@ export function KitGeneratorWorkspace() {
             );
           }
         }
+        if (Array.isArray(data.clauses)) {
+          setCatalogClauses(data.clauses);
+        }
+        if (Array.isArray(data.variants)) {
+          setCatalogVariants(data.variants);
+        }
+        if (Array.isArray(data.parameters)) {
+          setCatalogParameters(data.parameters);
+          setValoresPersonalizados((prev) => {
+            const next = { ...prev };
+            for (const p of data.parameters as ParameterCatalogo[]) {
+              if (next[p.key] === undefined) {
+                next[p.key] = p.default_value;
+              }
+            }
+            return next;
+          });
+        }
+        if (data.documentValorMarkers && typeof data.documentValorMarkers === 'object') {
+          setDocumentValorMarkers(data.documentValorMarkers);
+        }
+        if (data.qualificacaoConfig?.contrato) {
+          setQualificacaoContratoTemplate(data.qualificacaoConfig.contrato);
+        }
       })
       .catch(() => {
         // Mantém catálogo padrão caso falhe a atualização em segundo plano
@@ -172,6 +308,79 @@ export function KitGeneratorWorkspace() {
         .sort((a, b) => a.order_index - b.order_index),
     [todosDocumentos, kitSelecionadoId]
   );
+
+  const variantesDisponiveisNoKit = useMemo(() => {
+    const docIdsSet = new Set(documentosDoKitAtivo.map((d) => d.id));
+    const clauseIdsSet = new Set(
+      catalogClauses.filter((c) => docIdsSet.has(c.document_id)).map((c) => c.id)
+    );
+    const unicas = new Map<string, VariantCatalogo>();
+    for (const v of catalogVariants) {
+      if (clauseIdsSet.has(v.clause_id) && !unicas.has(v.key)) {
+        unicas.set(v.key, v);
+      }
+    }
+    return Array.from(unicas.values());
+  }, [documentosDoKitAtivo, catalogClauses, catalogVariants]);
+
+  const varianteEfetiva = useMemo(() => {
+    if (variantesDisponiveisNoKit.length === 0) return 'padrao';
+    if (variantesDisponiveisNoKit.some((v) => v.key === varianteContrato)) {
+      return varianteContrato;
+    }
+    return (
+      variantesDisponiveisNoKit.find((v) => v.is_default)?.key ||
+      variantesDisponiveisNoKit[0].key
+    );
+  }, [variantesDisponiveisNoKit, varianteContrato]);
+
+  const marcadoresValorAtivos = useMemo(() => {
+    const docsSelecionados = documentosDoKitAtivo.filter(
+      (d) => selecionados.includes(d.id) && d.kind !== 'static'
+    );
+    const chavesOrdenadas: string[] = [];
+
+    for (const doc of docsSelecionados) {
+      const info = documentValorMarkers[doc.id];
+      if (info) {
+        for (const k of info.direct || []) {
+          if (!chavesOrdenadas.includes(k)) chavesOrdenadas.push(k);
+        }
+        const varList = info.byVariant?.[varianteEfetiva] || [];
+        for (const k of varList) {
+          if (!chavesOrdenadas.includes(k)) chavesOrdenadas.push(k);
+        }
+      } else {
+        for (const p of catalogParameters) {
+          if (p.document_id === doc.id && !chavesOrdenadas.includes(p.key)) {
+            chavesOrdenadas.push(p.key);
+          }
+        }
+      }
+    }
+
+    const docIdsSelecionados = new Set(docsSelecionados.map((d) => d.id));
+    return chavesOrdenadas.map((key, idx) => {
+      const paramDoc =
+        catalogParameters.find((p) => p.key === key && docIdsSelecionados.has(p.document_id)) ||
+        catalogParameters.find((p) => p.key === key);
+      const label = isGenericOrLegacyHonorariosLabel(key, paramDoc?.label)
+        ? `Mín. Honorários ${idx + 1}`
+        : paramDoc!.label;
+
+      return {
+        key,
+        label,
+        defaultValue: paramDoc?.default_value ?? '',
+      };
+    });
+  }, [
+    documentosDoKitAtivo,
+    selecionados,
+    documentValorMarkers,
+    varianteEfetiva,
+    catalogParameters,
+  ]);
 
   const handleTrocarKit = (novoKitId: string) => {
     setKitSelecionadoId(novoKitId);
@@ -196,6 +405,7 @@ export function KitGeneratorWorkspace() {
 
   const preencherDadosFicticios = () => {
     setNome('Maria Francisca da Silva');
+    setNumeroInterno('INT-2026-042');
     setGenero('F');
     setNacionalidade('brasileira');
     setEstadoCivil('solteiro');
@@ -231,7 +441,8 @@ export function KitGeneratorWorkspace() {
           cep: cep || '68900000',
           referencia,
         },
-        'contrato'
+        'contrato',
+        qualificacaoContratoTemplate
       );
     } catch {
       return null;
@@ -249,6 +460,7 @@ export function KitGeneratorWorkspace() {
     cidadeUf,
     cep,
     referencia,
+    qualificacaoContratoTemplate,
   ]);
 
   const handleGerar = async (e: React.FormEvent) => {
@@ -269,18 +481,24 @@ export function KitGeneratorWorkspace() {
 
     setGerando(true);
     try {
+      const valoresPayload: Record<string, string> = {};
+      for (const m of marcadoresValorAtivos) {
+        const val = valoresPersonalizados[m.key];
+        valoresPayload[m.key] = val !== undefined ? val : m.defaultValue;
+      }
+
       const documentosPayload = documentosDoKitAtivo
         .filter((d) => selecionados.includes(d.id))
         .map((d) => ({
           documentId: d.id,
-          ...(d.id === 'doc_contrato_honorarios'
+          ...(d.kind === 'template'
             ? {
-                varianteId: varianteContrato,
-                valores: {
-                  minimo_honorarios: minimoHonorarios,
-                  minimo_auxilio_acidente: minimoAuxilioAcidente,
-                  minimo_reconhecimento_periodo: minimoReconhecimentoPeriodo,
-                },
+                ...(variantesDisponiveisNoKit.length > 0
+                  ? { varianteId: varianteEfetiva }
+                  : {}),
+                ...(Object.keys(valoresPayload).length > 0
+                  ? { valores: valoresPayload }
+                  : {}),
               }
             : {}),
         }));
@@ -293,6 +511,7 @@ export function KitGeneratorWorkspace() {
           kitId: kitSelecionadoId,
           cliente: {
             nome: nome.trim(),
+            ...(numeroInterno.trim() ? { numeroInterno: numeroInterno.trim() } : {}),
             genero,
             nacionalidade: nacionalidade.trim() || (genero === 'F' ? 'brasileira' : 'brasileiro'),
             estadoCivil,
@@ -384,6 +603,23 @@ export function KitGeneratorWorkspace() {
             </div>
 
             <div className="sm:col-span-4">
+              <label htmlFor="numeroInterno" className="block text-xs font-medium text-slate-300">
+                Número interno
+              </label>
+              <input
+                id="numeroInterno"
+                type="text"
+                maxLength={60}
+                value={numeroInterno}
+                onChange={(e) => setNumeroInterno(e.target.value)}
+                placeholder="Ex.: INT-2026-042"
+                className="mt-1.5 block w-full px-3 py-2 text-sm font-mono tabular-nums bg-slate-950 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+            <div className="sm:col-span-4">
               <span className="block text-xs font-medium text-slate-300">Gênero *</span>
               <div className="mt-1.5 grid grid-cols-2 gap-1 p-1 bg-slate-950 border border-slate-700 rounded-lg">
                 <button
@@ -410,10 +646,8 @@ export function KitGeneratorWorkspace() {
                 </button>
               </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
+            <div className="sm:col-span-4">
               <label htmlFor="cpf" className="block text-xs font-medium text-slate-300">
                 CPF *
               </label>
@@ -436,7 +670,7 @@ export function KitGeneratorWorkspace() {
               )}
             </div>
 
-            <div>
+            <div className="sm:col-span-4">
               <label htmlFor="estadoCivil" className="block text-xs font-medium text-slate-300">
                 Estado civil *
               </label>
@@ -453,8 +687,10 @@ export function KitGeneratorWorkspace() {
                 <option value="uniao_estavel">Em união estável</option>
               </select>
             </div>
+          </div>
 
-            <div>
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+            <div className="sm:col-span-5">
               <label htmlFor="nacionalidade" className="block text-xs font-medium text-slate-300">
                 Nacionalidade *
               </label>
@@ -468,20 +704,20 @@ export function KitGeneratorWorkspace() {
                 className="mt-1.5 block w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
               />
             </div>
-          </div>
 
-          <div>
-            <label htmlFor="profissao" className="block text-xs font-medium text-slate-300">
-              Profissão
-            </label>
-            <input
-              id="profissao"
-              type="text"
-              value={profissao}
-              onChange={(e) => setProfissao(e.target.value)}
-              placeholder="Opcional (ex.: Agricultora, Pedreiro)"
-              className="mt-1.5 block w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
-            />
+            <div className="sm:col-span-7">
+              <label htmlFor="profissao" className="block text-xs font-medium text-slate-300">
+                Profissão
+              </label>
+              <input
+                id="profissao"
+                type="text"
+                value={profissao}
+                onChange={(e) => setProfissao(e.target.value)}
+                placeholder="Opcional (ex.: Agricultora, Pedreiro)"
+                className="mt-1.5 block w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+              />
+            </div>
           </div>
 
           <div className="pt-2 border-t border-slate-800 space-y-4">
@@ -626,65 +862,59 @@ export function KitGeneratorWorkspace() {
               </div>
             )}
 
-            <div>
-              <label htmlFor="variante" className="block text-xs font-medium text-slate-300">
-                Variante de Honorários e Desistência
-              </label>
-              <select
-                id="variante"
-                value={varianteContrato}
-                onChange={(e) =>
-                  setVarianteContrato(
-                    e.target.value as 'padrao' | 'auxilio_acidente_trafego_pago'
-                  )
-                }
-                className="mt-1.5 block w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
-              >
-                <option value="padrao">Padrão (30% + Pisos Mínimos)</option>
-                <option value="auxilio_acidente_trafego_pago">
-                  Auxílio-Acidente Tráfego Pago (30% vencidas + 12 vincendas)
-                </option>
-              </select>
-            </div>
+            {variantesDisponiveisNoKit.length > 0 && (
+              <div>
+                <label htmlFor="variante" className="block text-xs font-medium text-slate-300">
+                  Variante de Honorários e Desistência
+                </label>
+                <select
+                  id="variante"
+                  value={varianteEfetiva}
+                  onChange={(e) => setVarianteContrato(e.target.value)}
+                  className="mt-1.5 block w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+                >
+                  {variantesDisponiveisNoKit.map((v) => (
+                    <option key={v.key} value={v.key}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label htmlFor="minHon" className="block text-[11px] font-medium text-slate-400">
-                  Mín. Honorários (R$)
-                </label>
-                <input
-                  id="minHon"
-                  type="text"
-                  value={minimoHonorarios}
-                  onChange={(e) => setMinimoHonorarios(e.target.value)}
-                  className="mt-1 block w-full px-2.5 py-1.5 text-xs font-mono tabular-nums bg-slate-950 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
+            {marcadoresValorAtivos.length > 0 && (
+              <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+                {marcadoresValorAtivos.map((marcador, idx) => {
+                  const inputId = `valor_${marcador.key}_${idx}`;
+                  const valorAtual =
+                    valoresPersonalizados[marcador.key] !== undefined
+                      ? valoresPersonalizados[marcador.key]
+                      : marcador.defaultValue;
+                  return (
+                    <div key={marcador.key} className="min-w-0">
+                      <label
+                        htmlFor={inputId}
+                        className="block text-[11px] font-medium text-slate-400 whitespace-nowrap"
+                      >
+                        {marcador.label}
+                      </label>
+                      <input
+                        id={inputId}
+                        type="text"
+                        value={valorAtual}
+                        onChange={(e) =>
+                          setValoresPersonalizados((prev) => ({
+                            ...prev,
+                            [marcador.key]: e.target.value,
+                          }))
+                        }
+                        className="mt-1 block w-28 px-2.5 py-1 text-xs font-mono tabular-nums bg-slate-950 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                  );
+                })}
               </div>
-              <div>
-                <label htmlFor="minAux" className="block text-[11px] font-medium text-slate-400">
-                  Mín. Auxílio-Acidente
-                </label>
-                <input
-                  id="minAux"
-                  type="text"
-                  value={minimoAuxilioAcidente}
-                  onChange={(e) => setMinimoAuxilioAcidente(e.target.value)}
-                  className="mt-1 block w-full px-2.5 py-1.5 text-xs font-mono tabular-nums bg-slate-950 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-              <div>
-                <label htmlFor="minPer" className="block text-[11px] font-medium text-slate-400">
-                  Mín. Período Rural
-                </label>
-                <input
-                  id="minPer"
-                  type="text"
-                  value={minimoReconhecimentoPeriodo}
-                  onChange={(e) => setMinimoReconhecimentoPeriodo(e.target.value)}
-                  className="mt-1 block w-full px-2.5 py-1.5 text-xs font-mono tabular-nums bg-slate-950 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
               <div>

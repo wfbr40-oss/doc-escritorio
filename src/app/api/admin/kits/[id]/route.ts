@@ -101,6 +101,22 @@ export async function DELETE(
 
     if (isSupabaseConfigured()) {
       const supabase = await createClient();
+      if (docsDoKit.length > 0) {
+        const outroDocId = Array.from(dataStore.documents.values()).find(
+          (doc) => doc.kit_id !== id
+        )?.id;
+        if (outroDocId) {
+          await supabase
+            .from('parameters')
+            .update({ document_id: outroDocId })
+            .in(
+              'document_id',
+              docsDoKit.map((d) => d.id)
+            )
+            .or('id.like.__sys_%,key.like.__CUSTOM__:%');
+        }
+      }
+
       const { error } = await supabase.from('kits').delete().eq('id', id);
       if (error) {
         return NextResponse.json(

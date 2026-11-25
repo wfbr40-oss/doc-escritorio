@@ -71,6 +71,10 @@ export async function GET() {
     clauses: catalog.clauses,
     variants: catalog.variants,
     parameters: catalog.parameters,
+    customMarkers: catalog.customMarkers,
+    qualificacaoConfig: catalog.qualificacaoConfig,
+    standardMarkers: catalog.standardMarkers,
+    documentValorMarkers: catalog.documentValorMarkers,
     users: usersList.sort((a, b) => a.name.localeCompare(b.name)),
   });
 }

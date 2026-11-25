@@ -20,6 +20,7 @@ interface DocumentoHistorico {
   document_name: string;
   user_name: string;
   client_masked_name: string;
+  client_internal_number?: string;
   status: 'ativo' | 'expirado';
   expires_at: string;
   created_at: string;
@@ -30,6 +31,7 @@ interface DocumentoHistorico {
 interface LoteHistorico {
   batch_id: string;
   client_masked_name: string;
+  client_internal_number?: string;
   user_name: string;
   created_at: string;
   expires_at: string;
@@ -37,6 +39,13 @@ interface LoteHistorico {
   status: 'ativo' | 'expirado';
   dias_restantes: number;
   aviso_expiracao: boolean;
+}
+
+function formatarNumeroInterno(valor?: string): string | null {
+  if (!valor) return null;
+  const limpo = valor.trim();
+  if (!limpo) return null;
+  return /^(#|n[º°])/i.test(limpo) ? limpo : `Nº ${limpo}`;
 }
 
 export function HistoricoWorkspace() {
@@ -98,6 +107,7 @@ export function HistoricoWorkspace() {
         (l) =>
           !termo ||
           l.client_masked_name.toLowerCase().includes(termo) ||
+          (l.client_internal_number || '').toLowerCase().includes(termo) ||
           l.batch_id.toLowerCase().includes(termo)
       ),
     [lotes, termo]
@@ -109,6 +119,7 @@ export function HistoricoWorkspace() {
         (d) =>
           !termo ||
           d.client_masked_name.toLowerCase().includes(termo) ||
+          (d.client_internal_number || '').toLowerCase().includes(termo) ||
           d.document_name.toLowerCase().includes(termo)
       ),
     [documentos, termo]
@@ -191,7 +202,7 @@ export function HistoricoWorkspace() {
             type="text"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Filtrar por cliente ou documento..."
+            placeholder="Filtrar por cliente, nº interno ou documento..."
             className="w-full min-h-[40px] pl-9 pr-3 py-2 text-xs bg-slate-900 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
           />
         </div>
@@ -230,9 +241,16 @@ export function HistoricoWorkspace() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-white truncate">
-                        {lote.client_masked_name}
-                      </p>
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <p className="text-sm font-medium text-white truncate">
+                          {lote.client_masked_name}
+                        </p>
+                        {formatarNumeroInterno(lote.client_internal_number) && (
+                          <span className="font-mono text-[11px] text-amber-300 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 tabular-nums whitespace-nowrap">
+                            {formatarNumeroInterno(lote.client_internal_number)}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[11px] text-slate-500 font-mono tabular-nums mt-0.5">
                         Lote {lote.batch_id.slice(0, 8)} · {lote.user_name}
                       </p>
@@ -294,8 +312,17 @@ export function HistoricoWorkspace() {
                   {lotesFiltrados.map((lote) => (
                     <tr key={lote.batch_id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4">
-                        <div className="font-medium text-white">{lote.client_masked_name}</div>
-                        <div className="text-[11px] text-slate-500 font-mono tabular-nums">
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                          <span className="font-medium text-white">
+                            {lote.client_masked_name}
+                          </span>
+                          {formatarNumeroInterno(lote.client_internal_number) && (
+                            <span className="font-mono text-[11px] text-amber-300 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 tabular-nums whitespace-nowrap">
+                              {formatarNumeroInterno(lote.client_internal_number)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-mono tabular-nums mt-0.5">
                           Lote {lote.batch_id.slice(0, 8)} · {lote.user_name}
                         </div>
                       </td>
@@ -357,7 +384,14 @@ export function HistoricoWorkspace() {
               >
                 <div className="min-w-0 space-y-1">
                   <p className="text-sm font-medium text-white leading-snug">{doc.document_name}</p>
-                  <p className="text-xs text-slate-300 truncate">{doc.client_masked_name}</p>
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <p className="text-xs text-slate-300 truncate">{doc.client_masked_name}</p>
+                    {formatarNumeroInterno(doc.client_internal_number) && (
+                      <span className="font-mono text-[11px] text-amber-300 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 tabular-nums whitespace-nowrap">
+                        {formatarNumeroInterno(doc.client_internal_number)}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80 text-xs">
@@ -410,7 +444,16 @@ export function HistoricoWorkspace() {
                 {docsFiltrados.map((doc) => (
                   <tr key={doc.id} className="hover:bg-slate-800/40 transition-colors">
                     <td className="py-3.5 px-4 font-medium text-white">{doc.document_name}</td>
-                    <td className="py-3.5 px-4 text-slate-300">{doc.client_masked_name}</td>
+                    <td className="py-3.5 px-4 text-slate-300">
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span>{doc.client_masked_name}</span>
+                        {formatarNumeroInterno(doc.client_internal_number) && (
+                          <span className="font-mono text-[11px] text-amber-300 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 tabular-nums whitespace-nowrap">
+                            {formatarNumeroInterno(doc.client_internal_number)}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3.5 px-4 text-slate-400 tabular-nums whitespace-nowrap">
                       {new Date(doc.created_at).toLocaleDateString('pt-BR')}
                     </td>

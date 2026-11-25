@@ -25,6 +25,7 @@ export interface SolicitacaoItemDocumento {
 
 export interface SolicitacaoGeracao {
   cliente: ClienteRender;
+  numeroInterno?: string;
   kitId?: string;
   documentos: SolicitacaoItemDocumento[];
   assinatura?: {
@@ -121,6 +122,14 @@ export async function POST(req: NextRequest) {
         ? `${partesNome[0]} ${partesNome[partesNome.length - 1]}`
         : partesNome[0];
 
+    const rawNumeroInterno =
+      typeof cliente.numeroInterno === 'string'
+        ? cliente.numeroInterno
+        : typeof body.numeroInterno === 'string'
+          ? body.numeroInterno
+          : '';
+    const clientInternalNumber = rawNumeroInterno.trim().slice(0, 60) || undefined;
+
     const supabase = isSupabaseConfigured() ? await createClient() : null;
 
     // 3. Processamento de cada documento
@@ -187,6 +196,7 @@ export async function POST(req: NextRequest) {
         documentName: docDef.name,
         userName: session.name,
         clientMaskedName: maskedClientName,
+        ...(clientInternalNumber ? { clientInternalNumber } : {}),
       };
 
       // Persiste no Supabase Storage ('gerados') e tabela generated_documents quando configurado
@@ -238,6 +248,7 @@ export async function POST(req: NextRequest) {
         user_id: session.id,
         user_name: session.name,
         client_masked_name: maskedClientName,
+        ...(clientInternalNumber ? { client_internal_number: clientInternalNumber } : {}),
         file_path: filePath,
         status: 'ativo',
         snapshot: enrichedSnapshot,

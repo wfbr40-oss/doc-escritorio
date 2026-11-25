@@ -95,10 +95,20 @@ export async function montarRenderData(
     dataExtenso: ajustes.assinatura?.dataExtenso || dataExtensoPadrao,
   };
 
+  const customMarkersMap: Record<string, string> = {};
+  for (const m of dataStore.customMarkers.values()) {
+    customMarkersMap[m.key] = m.value;
+  }
+
   return {
     cliente,
     valores,
     clausulas,
     assinatura,
+    customMarkers: customMarkersMap,
+    qualificacaoTemplates: {
+      contrato: dataStore.qualificacaoConfig.contrato,
+      rotulos: dataStore.qualificacaoConfig.rotulos,
+    },
   };
 }

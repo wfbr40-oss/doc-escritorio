@@ -32,6 +32,10 @@ export async function GET() {
               ? (row.snapshot as Record<string, unknown>)
               : null;
           const docDef = dataStore.documents.get(row.document_id);
+          const internalNum =
+            typeof snap?.clientInternalNumber === 'string' && snap.clientInternalNumber.trim()
+              ? snap.clientInternalNumber.trim()
+              : undefined;
           mergedDocs.set(row.id, {
             id: row.id,
             batch_id: row.batch_id,
@@ -46,6 +50,7 @@ export async function GET() {
             client_masked_name:
               (typeof snap?.clientMaskedName === 'string' && snap.clientMaskedName) ||
               'Cliente',
+            ...(internalNum ? { client_internal_number: internalNum } : {}),
             file_path: row.file_path,
             status: row.status === 'expirado' ? 'expirado' : 'ativo',
             snapshot: snap,
@@ -64,6 +69,11 @@ export async function GET() {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .map((doc) => {
       const diasRestantes = diasParaExpirar(doc.expires_at, agora);
+      const snapshotInternal =
+        doc.snapshot && typeof doc.snapshot.clientInternalNumber === 'string'
+          ? doc.snapshot.clientInternalNumber.trim()
+          : '';
+      const clientInternalNumber = doc.client_internal_number || snapshotInternal || undefined;
       return {
         id: doc.id,
         batch_id: doc.batch_id,
@@ -71,6 +81,7 @@ export async function GET() {
         document_name: doc.document_name,
         user_name: doc.user_name,
         client_masked_name: doc.client_masked_name,
+        client_internal_number: clientInternalNumber,
         status: doc.status,
         expires_at: doc.expires_at,
         created_at: doc.created_at,
@@ -83,6 +94,7 @@ export async function GET() {
   const lotesMap = new Map<string, {
     batch_id: string;
     client_masked_name: string;
+    client_internal_number?: string;
     user_name: string;
     created_at: string;
     expires_at: string;
@@ -97,6 +109,7 @@ export async function GET() {
       lotesMap.set(doc.batch_id, {
         batch_id: doc.batch_id,
         client_masked_name: doc.client_masked_name,
+        ...(doc.client_internal_number ? { client_internal_number: doc.client_internal_number } : {}),
         user_name: doc.user_name,
         created_at: doc.created_at,
         expires_at: doc.expires_at,
@@ -108,6 +121,9 @@ export async function GET() {
     } else {
       const lote = lotesMap.get(doc.batch_id)!;
       lote.total_documentos += 1;
+      if (!lote.client_internal_number && doc.client_internal_number) {
+        lote.client_internal_number = doc.client_internal_number;
+      }
     }
   }
 

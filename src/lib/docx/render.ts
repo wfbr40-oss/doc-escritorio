@@ -19,6 +19,11 @@ export interface RenderData {
     cidadeUf: string;
     dataExtenso: string;
   };
+  customMarkers?: Record<string, string>;
+  qualificacaoTemplates?: {
+    contrato?: string;
+    rotulos?: string;
+  };
 }
 
 export function escapeXml(unsafe: string): string {
@@ -371,13 +376,27 @@ export async function renderDocx(
     }
   }
 
-  validarMarcadores(Array.from(marcadoresSet), data.valores, data.clausulas);
+  validarMarcadores(
+    Array.from(marcadoresSet),
+    data.valores,
+    data.clausulas,
+    data.customMarkers || {}
+  );
 
-  // 2. Mapeamento dos valores conhecidos
+  // 2. Mapeamento dos valores conhecidos (inclui marcadores personalizados + padrão)
   const mapaValores: Record<string, string> = {
+    ...(data.customMarkers || {}),
     CLIENTE_NOME: data.cliente.nome,
-    CLIENTE_QUALIFICACAO: buildQualificacao(data.cliente, 'contrato'),
-    CLIENTE_QUALIFICACAO_ROTULOS: buildQualificacao(data.cliente, 'rotulos'),
+    CLIENTE_QUALIFICACAO: buildQualificacao(
+      data.cliente,
+      'contrato',
+      data.qualificacaoTemplates?.contrato
+    ),
+    CLIENTE_QUALIFICACAO_ROTULOS: buildQualificacao(
+      data.cliente,
+      'rotulos',
+      data.qualificacaoTemplates?.rotulos
+    ),
     CLIENTE_CPF: formatCpf(data.cliente.cpf),
     CLIENTE_CEP: formatCep(data.cliente.cep),
     CLIENTE_ENDERECO: data.cliente.endereco,
