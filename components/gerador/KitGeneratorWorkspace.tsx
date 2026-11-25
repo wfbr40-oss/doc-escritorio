@@ -1,13 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import {
   FileText,
   Download,
   Package,
-  AlertCircle,
   CheckCircle2,
   Sparkles,
   Check,
@@ -18,6 +17,7 @@ import { buildQualificacao, EstadoCivilValor, Genero } from '@/src/lib/cliente/q
 import { formatCpf, isValidCpf } from '@/src/lib/cliente/cpf';
 import { formatCep } from '@/src/lib/cliente/cep';
 import { formatDataExtenso } from '@/src/lib/cliente/data';
+import { showToast } from '@/components/ui/ToastViewport';
 
 interface KitCatalogo {
   id: string;
@@ -133,8 +133,8 @@ export function KitGeneratorWorkspace() {
   );
 
   const [gerando, setGerando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ResultadoGeracao | null>(null);
+  const resultadoRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let ativo = true;
@@ -207,7 +207,6 @@ export function KitGeneratorWorkspace() {
     setCidadeUf('Macapá/AP');
     setCep('68900-010');
     setReferencia('Próximo à Praça Central');
-    setErro(null);
   };
 
   const cpfValido = cpf.trim().length > 0 ? isValidCpf(cpf) : null;
@@ -254,16 +253,17 @@ export function KitGeneratorWorkspace() {
 
   const handleGerar = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErro(null);
     setResultado(null);
 
     if (selecionados.length === 0) {
-      setErro('Selecione ao menos um documento do kit para gerar.');
+      showToast.error('Selecione ao menos um documento do kit para gerar.');
       return;
     }
 
     if (!isValidCpf(cpf)) {
-      setErro('O CPF informado é inválido. Confira os dígitos antes de gerar os documentos.');
+      showToast.error(
+        'O CPF informado é inválido. Confira os dígitos antes de gerar os documentos.'
+      );
       return;
     }
 
@@ -315,24 +315,30 @@ export function KitGeneratorWorkspace() {
 
       const data = await res.json();
       if (!res.ok) {
-        setErro(data.erro || 'Não foi possível gerar os documentos.');
+        showToast.error(data.erro || 'Não foi possível gerar os documentos.');
         setGerando(false);
         return;
       }
 
       setResultado(data);
       setGerando(false);
+      showToast.success(
+        `Kit gerado com sucesso (${data.total} ${data.total === 1 ? 'documento' : 'documentos'}).`
+      );
+      window.setTimeout(() => {
+        resultadoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 60);
     } catch {
-      setErro('Erro de conexão ao gerar os documentos. Tente novamente.');
+      showToast.error('Erro de conexão ao gerar os documentos. Tente novamente.');
       setGerando(false);
     }
   };
 
   return (
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-slate-800">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white text-balance">
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-white text-balance">
             Gerar Kit Previdenciário
           </h1>
           <p className="mt-1 text-sm text-slate-400">
@@ -343,84 +349,16 @@ export function KitGeneratorWorkspace() {
         <button
           type="button"
           onClick={preencherDadosFicticios}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium text-slate-200 bg-slate-900 hover:bg-slate-800 border border-slate-700 transition-colors whitespace-nowrap shrink-0"
+          className="self-start sm:self-auto inline-flex items-center justify-center gap-2 min-h-[40px] px-3.5 py-2 rounded-lg text-xs font-medium text-slate-200 bg-slate-900 hover:bg-slate-800 border border-slate-700 transition-colors whitespace-nowrap shrink-0"
         >
           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
           <span>Preencher Exemplo Fictício</span>
         </button>
       </div>
 
-      {erro && (
-        <div className="mt-6 p-3.5 rounded-lg bg-red-950/40 border border-red-800/60 flex items-start gap-2.5 text-sm text-red-200">
-          <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
-          <span>{erro}</span>
-        </div>
-      )}
-
-      {resultado && (
-        <motion.section
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2 }}
-          className="mt-6 bg-slate-900 border border-emerald-700/50 rounded-xl p-6"
-        >
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-800">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-              <div>
-                <h2 className="text-base font-semibold text-white">
-                  Kit gerado com sucesso ({resultado.total}{' '}
-                  {resultado.total === 1 ? 'documento' : 'documentos'})
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
-                  Lote {resultado.batchId.slice(0, 8)} · Retenção até{' '}
-                  {new Date(resultado.expiresAt).toLocaleDateString('pt-BR')}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 shrink-0">
-              <Link
-                href="/historico"
-                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors whitespace-nowrap"
-              >
-                <History className="w-3.5 h-3.5" />
-                <span>Ver Histórico</span>
-              </Link>
-
-              <a
-                href={resultado.zipDownloadUrl}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-slate-950 bg-amber-400 hover:bg-amber-300 transition-colors whitespace-nowrap"
-              >
-                <Archive className="w-3.5 h-3.5" />
-                <span>Baixar Kit Completo (.ZIP)</span>
-              </a>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {resultado.itens.map((item) => (
-              <a
-                key={item.id}
-                href={`/api/download/${item.id}`}
-                className="flex items-center justify-between gap-2 p-3 rounded-lg bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 transition-colors group"
-              >
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-slate-200 truncate group-hover:text-amber-300">
-                    {item.nome}
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Documento DOCX</p>
-                </div>
-                <Download className="w-4 h-4 text-slate-400 group-hover:text-amber-400 shrink-0" />
-              </a>
-            ))}
-          </div>
-        </motion.section>
-      )}
-
-      <form onSubmit={handleGerar} className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <form onSubmit={handleGerar} className="mt-6 sm:mt-8 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
         {/* Coluna Esquerda: Dados do Cliente */}
-        <section className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
+        <section className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-4 sm:p-6 space-y-6">
           <div className="pb-4 border-b border-slate-800">
             <h2 className="text-base font-semibold text-white">01. Dados do Cliente</h2>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -657,7 +595,7 @@ export function KitGeneratorWorkspace() {
         </section>
 
         {/* Coluna Direita: Variantes, Parâmetros e Documentos */}
-        <section className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6 flex flex-col justify-between">
+        <section className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-4 sm:p-6 space-y-6 flex flex-col justify-between">
           <div className="space-y-6">
             <div className="pb-4 border-b border-slate-800">
               <h2 className="text-base font-semibold text-white">
@@ -811,7 +749,7 @@ export function KitGeneratorWorkspace() {
                         key={doc.id}
                         type="button"
                         onClick={() => toggleDocumento(doc.id)}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-900/80 transition-colors"
+                        className="w-full flex items-center gap-3 px-3 py-3 text-left hover:bg-slate-900/80 transition-colors min-h-[48px]"
                       >
                         <span
                           className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 ${
@@ -823,7 +761,9 @@ export function KitGeneratorWorkspace() {
                           {ativo && <Check className="w-3 h-3" />}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium text-slate-200 truncate">{doc.name}</p>
+                          <p className="text-xs font-medium text-slate-200 leading-snug sm:truncate">
+                            {doc.name}
+                          </p>
                           <p className="text-[11px] text-slate-500">
                             {doc.kind === 'static'
                               ? 'Documento estático · Em branco'
@@ -851,6 +791,68 @@ export function KitGeneratorWorkspace() {
           </div>
         </section>
       </form>
+
+      {resultado && (
+        <motion.section
+          ref={resultadoRef}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          className="mt-6 sm:mt-8 bg-slate-900 border border-emerald-700/50 rounded-xl p-4 sm:p-6"
+        >
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-800">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <h2 className="text-base font-semibold text-white">
+                  Kit gerado com sucesso ({resultado.total}{' '}
+                  {resultado.total === 1 ? 'documento' : 'documentos'})
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+                  Lote {resultado.batchId.slice(0, 8)} · Retenção até{' '}
+                  {new Date(resultado.expiresAt).toLocaleDateString('pt-BR')}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 shrink-0">
+              <Link
+                href="/historico"
+                className="inline-flex items-center justify-center gap-2 min-h-[40px] px-3.5 py-2 rounded-lg text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors whitespace-nowrap"
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Ver Histórico</span>
+              </Link>
+
+              <a
+                href={resultado.zipDownloadUrl}
+                className="inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 rounded-lg text-xs font-semibold text-slate-950 bg-amber-400 hover:bg-amber-300 transition-colors whitespace-nowrap"
+              >
+                <Archive className="w-3.5 h-3.5" />
+                <span>Baixar Kit Completo (.ZIP)</span>
+              </a>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {resultado.itens.map((item) => (
+              <a
+                key={item.id}
+                href={`/api/download/${item.id}`}
+                className="flex items-center justify-between gap-2 p-3 rounded-lg bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 transition-colors group"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-slate-200 truncate group-hover:text-amber-300">
+                    {item.nome}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Documento DOCX</p>
+                </div>
+                <Download className="w-4 h-4 text-slate-400 group-hover:text-amber-400 shrink-0" />
+              </a>
+            ))}
+          </div>
+        </motion.section>
+      )}
     </main>
   );
 }

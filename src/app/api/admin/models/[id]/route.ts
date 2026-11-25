@@ -1,13 +1,18 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  formatSupabaseWriteError,
+  isDocxFileName,
   requireAdminSession,
   validateDocxBuffer,
 } from '@/src/lib/supabase/admin-guard';
 import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
 import { dataStore, DocumentItem, TemplateContent } from '@/src/lib/supabase/store';
 import { createTemplateDocx } from '@/src/lib/docx/builder';
-import { syncCatalogFromSupabase } from '@/src/lib/modelos/catalog';
+import {
+  ensureKitExistsInSupabase,
+  syncCatalogFromSupabase,
+} from '@/src/lib/modelos/catalog';
 import { logSeguro } from '@/src/lib/logs/seguro';
 
 export async function PATCH(
@@ -18,7 +23,7 @@ export async function PATCH(
   if (!auth.ok) return auth.response;
 
   try {
-    await syncCatalogFromSupabase();
+    await syncCatalogFromSupabase({ seedIfEmpty: true });
     const { id } = await context.params;
     const existente = dataStore.documents.get(id);
     if (!existente) {
@@ -59,12 +64,40 @@ export async function PATCH(
       }
 
       const file = formData.get('file');
-      if (file && file instanceof File && file.size > 0) {
+      if (
+        file &&
+        typeof file === 'object' &&
+        'arrayBuffer' in file &&
+        typeof file.arrayBuffer === 'function' &&
+        'size' in file &&
+        Number(file.size) > 0
+      ) {
+        const fileName = 'name' in file && typeof file.name === 'string' ? file.name : '';
+        if (fileName && !isDocxFileName(fileName)) {
+          return NextResponse.json(
+            {
+              erro: 'Formato de arquivo não permitido. O arquivo anexado deve ser em formato .docx.',
+            },
+            { status: 400 }
+          );
+        }
+
         const bytes = new Uint8Array(await file.arrayBuffer());
+        if (bytes.byteLength > 15 * 1024 * 1024) {
+          return NextResponse.json(
+            {
+              erro: 'O arquivo excede o tamanho máximo de 15 MB. O arquivo anexado deve ser um .docx de até 15 MB.',
+            },
+            { status: 400 }
+          );
+        }
+
         const valido = await validateDocxBuffer(bytes);
         if (!valido) {
           return NextResponse.json(
-            { erro: 'Arquivo inválido. Envie um documento .docx válido do Microsoft Word.' },
+            {
+              erro: 'Arquivo inválido ou corrompido. O documento anexado deve ser um arquivo .docx válido.',
+            },
             { status: 400 }
           );
         }
@@ -132,48 +165,127 @@ export async function PATCH(
     if (isSupabaseConfigured()) {
       const supabase = await createClient();
 
+      const kitEnsure = await ensureKitExistsInSupabase(supabase, kitId);
+      if (kitEnsure.error) {
+        return NextResponse.json(
+          {
+            erro: formatSupabaseWriteError(
+              kitEnsure.error,
+              'Não foi possível validar o kit pai no Supabase.'
+            ),
+          },
+          { status: kitEnsure.error.code === '42501' ? 403 : 500 }
+        );
+      }
+
       if (nextBytes) {
-        try {
-          const objectPath = atualizado.template_file_path.replace(/^molduras\//, '');
+        const objectPath = atualizado.template_file_path.replace(/^molduras\//, '');
+        let storageError = (
           await supabase.storage.from('molduras').upload(objectPath, nextBytes, {
             contentType:
               'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             upsert: true,
+          })
+        ).error;
+
+        if (storageError) {
+          // Fallback caso a política de UPDATE em storage.objects ainda não tenha sido aplicada
+          await supabase.storage.from('molduras').remove([objectPath]);
+          storageError = (
+            await supabase.storage.from('molduras').upload(objectPath, nextBytes, {
+              contentType:
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              upsert: false,
+            })
+          ).error;
+        }
+
+        if (storageError) {
+          logSeguro('admin_modelo_storage_update_erro', {
+            userId: auth.session.id,
+            erro: storageError.message,
           });
-        } catch {
-          // Storage opcional
+          if (uploadedBytes) {
+            return NextResponse.json(
+              {
+                erro: formatSupabaseWriteError(
+                  storageError,
+                  "Não foi possível enviar o arquivo .docx para o Storage do Supabase (bucket 'molduras')."
+                ),
+              },
+              { status: 500 }
+            );
+          }
         }
       }
 
-      const extUpdate = await supabase
+      const extUpsert = await supabase
         .from('documents')
-        .update({
-          name: atualizado.name,
-          kit_id: atualizado.kit_id,
-          kind: atualizado.kind,
-          order_index: atualizado.order_index,
-          template_content: atualizado.template_content,
-        })
-        .eq('id', id);
-
-      if (extUpdate.error) {
-        const basicUpdate = await supabase
-          .from('documents')
-          .update({
+        .upsert(
+          {
+            id,
             name: atualizado.name,
             kit_id: atualizado.kit_id,
             kind: atualizado.kind,
+            template_file_path: atualizado.template_file_path,
             order_index: atualizado.order_index,
-          })
-          .eq('id', id);
+            template_content: atualizado.template_content,
+            created_at: atualizado.created_at,
+          },
+          { onConflict: 'id' }
+        );
 
-        if (basicUpdate.error) {
+      if (extUpsert.error) {
+        const isMissingCol =
+          extUpsert.error.code === '42703' ||
+          extUpsert.error.message?.includes('template_content');
+
+        if (isMissingCol) {
+          const basicUpsert = await supabase
+            .from('documents')
+            .upsert(
+              {
+                id,
+                name: atualizado.name,
+                kit_id: atualizado.kit_id,
+                kind: atualizado.kind,
+                template_file_path: atualizado.template_file_path,
+                order_index: atualizado.order_index,
+                created_at: atualizado.created_at,
+              },
+              { onConflict: 'id' }
+            );
+
+          if (basicUpsert.error) {
+            return NextResponse.json(
+              {
+                erro: formatSupabaseWriteError(
+                  basicUpsert.error,
+                  'Não foi possível atualizar o modelo no Supabase.'
+                ),
+              },
+              { status: basicUpsert.error.code === '42501' ? 403 : 500 }
+            );
+          }
+        } else {
           return NextResponse.json(
-            { erro: 'Não foi possível atualizar o modelo no banco de dados.' },
-            { status: 500 }
+            {
+              erro: formatSupabaseWriteError(
+                extUpsert.error,
+                'Não foi possível atualizar o modelo no Supabase.'
+              ),
+            },
+            { status: extUpsert.error.code === '42501' ? 403 : 500 }
           );
         }
       }
+
+      await supabase.from('audit_log').insert({
+        user_id: auth.session.id,
+        action: 'admin_modelo_atualizado',
+        target_id: id,
+        metadata: { kitId: atualizado.kit_id },
+      });
     }
 
     if (nextBytes) {
@@ -210,7 +322,7 @@ export async function DELETE(
   if (!auth.ok) return auth.response;
 
   try {
-    await syncCatalogFromSupabase();
+    await syncCatalogFromSupabase({ seedIfEmpty: true });
     const { id } = await context.params;
     const existente = dataStore.documents.get(id);
     if (!existente) {
@@ -223,9 +335,12 @@ export async function DELETE(
       if (error) {
         return NextResponse.json(
           {
-            erro: 'Não foi possível excluir este modelo porque já existem documentos gerados vinculados a ele no histórico.',
+            erro:
+              error.code === '23503'
+                ? 'Não foi possível excluir este modelo porque já existem documentos gerados vinculados a ele no histórico.'
+                : formatSupabaseWriteError(error, 'Não foi possível excluir o modelo no Supabase.'),
           },
-          { status: 409 }
+          { status: error.code === '23503' ? 409 : error.code === '42501' ? 403 : 500 }
         );
       }
 

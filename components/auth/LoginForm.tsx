@@ -8,10 +8,9 @@ import {
   User,
   ArrowRight,
   Scale,
-  AlertCircle,
-  CheckCircle2,
   UserPlus,
 } from 'lucide-react';
+import { showToast } from '@/components/ui/ToastViewport';
 
 type AuthMode = 'login' | 'signup';
 
@@ -26,31 +25,25 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [carregando, setCarregando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-  const [sucesso, setSucesso] = useState<string | null>(null);
 
   const alternarModo = (novoModo: AuthMode) => {
     setModo(novoModo);
-    setErro(null);
-    setSucesso(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErro(null);
-    setSucesso(null);
 
     if (modo === 'signup') {
       if (name.trim().length < 2) {
-        setErro('Informe seu nome completo (mínimo de 2 caracteres).');
+        showToast.error('Informe seu nome completo (mínimo de 2 caracteres).');
         return;
       }
       if (password.length < 6) {
-        setErro('A senha deve ter no mínimo 6 caracteres.');
+        showToast.error('A senha deve ter no mínimo 6 caracteres.');
         return;
       }
       if (password !== confirmPassword) {
-        setErro('As senhas informadas não coincidem.');
+        showToast.error('As senhas informadas não coincidem.');
         return;
       }
     }
@@ -74,7 +67,7 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
       const data = await res.json();
 
       if (!res.ok) {
-        setErro(
+        showToast.error(
           data.erro ||
             (modo === 'login' ? 'Falha ao autenticar.' : 'Não foi possível criar a conta.')
         );
@@ -83,7 +76,7 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
       }
 
       if (modo === 'signup' && data.confirmaEmail) {
-        setSucesso(
+        showToast.success(
           data.mensagem ||
             'Conta registrada no Supabase! Confirme o e-mail enviado para você (ou desative "Confirm email" no painel do Supabase) antes de entrar.'
         );
@@ -95,7 +88,7 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
 
       window.location.assign('/');
     } catch {
-      setErro('Erro de conexão com o servidor. Tente novamente.');
+      showToast.error('Erro de conexão com o servidor. Tente novamente.');
       setCarregando(false);
     }
   };
@@ -104,13 +97,11 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
     setModo('login');
     setEmail(e);
     setPassword(p);
-    setErro(null);
-    setSucesso(null);
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-slate-100">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+    <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8 text-slate-100">
+      <div className="mx-auto w-full max-w-md">
         <div className="flex justify-center mb-4">
           <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
             <Scale className="w-6 h-6" />
@@ -124,8 +115,8 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-slate-800/90 py-8 px-6 shadow-xl border border-slate-700/60 sm:rounded-xl sm:px-10">
+      <div className="mt-8 mx-auto w-full max-w-md">
+        <div className="bg-slate-800/90 py-7 px-5 sm:py-8 sm:px-10 shadow-xl border border-slate-700/60 rounded-xl">
           <div
             role="tablist"
             aria-label="Modo de acesso"
@@ -158,20 +149,6 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
               Criar conta
             </button>
           </div>
-
-          {sucesso && (
-            <div className="mb-6 p-3 rounded-lg bg-emerald-950/50 border border-emerald-700/60 flex items-start gap-2.5 text-xs text-emerald-200">
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
-              <span>{sucesso}</span>
-            </div>
-          )}
-
-          {erro && (
-            <div className="mb-6 p-3 rounded-lg bg-red-950/40 border border-red-800/50 flex items-start gap-2.5 text-xs text-red-300">
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
-              <span>{erro}</span>
-            </div>
-          )}
 
           <form className="space-y-4" onSubmit={handleSubmit}>
             {modo === 'signup' && (

@@ -1,9 +1,16 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdminSession, slugifyId } from '@/src/lib/supabase/admin-guard';
+import {
+  formatSupabaseWriteError,
+  requireAdminSession,
+  slugifyId,
+} from '@/src/lib/supabase/admin-guard';
 import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
 import { dataStore, Kit } from '@/src/lib/supabase/store';
-import { syncCatalogFromSupabase } from '@/src/lib/modelos/catalog';
+import {
+  obterMolduraDocumento,
+  syncCatalogFromSupabase,
+} from '@/src/lib/modelos/catalog';
 import { logSeguro } from '@/src/lib/logs/seguro';
 
 export async function POST(req: NextRequest) {
@@ -11,7 +18,7 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return auth.response;
 
   try {
-    await syncCatalogFromSupabase();
+    await syncCatalogFromSupabase({ seedIfEmpty: true });
 
     const body = await req.json();
     const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -37,8 +44,9 @@ export async function POST(req: NextRequest) {
       created_at: createdAt,
     };
 
-    if (isSupabaseConfigured()) {
-      const supabase = await createClient();
+    const supabase = isSupabaseConfigured() ? await createClient() : null;
+
+    if (supabase) {
       const { error } = await supabase.from('kits').insert({
         id: novoKit.id,
         name: novoKit.name,
@@ -46,9 +54,10 @@ export async function POST(req: NextRequest) {
         created_at: novoKit.created_at,
       });
       if (error) {
+        logSeguro('admin_kit_supabase_erro', { userId: auth.session.id, erro: error.message });
         return NextResponse.json(
-          { erro: 'Não foi possível salvar o kit no banco de dados.' },
-          { status: 500 }
+          { erro: formatSupabaseWriteError(error, 'Não foi possível salvar o kit no Supabase.') },
+          { status: error.code === '42501' ? 403 : 500 }
         );
       }
     }
@@ -64,10 +73,8 @@ export async function POST(req: NextRequest) {
       for (const docOrigem of origemDocs) {
         const novoDocId = slugifyId('doc', docOrigem.name);
         const novoPath = `molduras/${novoDocId}.docx`;
-        const bytesOriginais = dataStore.storageFiles.get(docOrigem.template_file_path);
-        if (bytesOriginais) {
-          dataStore.storageFiles.set(novoPath, bytesOriginais);
-        }
+        const bytesCopia = await obterMolduraDocumento(docOrigem);
+        dataStore.storageFiles.set(novoPath, bytesCopia);
 
         const docCopiado = {
           id: novoDocId,
@@ -85,21 +92,54 @@ export async function POST(req: NextRequest) {
           created_at: createdAt,
         };
 
-        dataStore.documents.set(docCopiado.id, docCopiado);
+        if (supabase) {
+          const objectPath = novoPath.replace(/^molduras\//, '');
+          await supabase.storage.from('molduras').upload(objectPath, bytesCopia, {
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            upsert: false,
+          });
 
-        if (isSupabaseConfigured()) {
-          const supabase = await createClient();
-          await supabase.from('documents').insert({
+          const extClone = await supabase.from('documents').insert({
             id: docCopiado.id,
             kit_id: docCopiado.kit_id,
             name: docCopiado.name,
             kind: docCopiado.kind,
             template_file_path: docCopiado.template_file_path,
+            template_content: docCopiado.template_content,
             order_index: docCopiado.order_index,
             created_at: docCopiado.created_at,
           });
+
+          if (extClone.error) {
+            const isMissingCol =
+              extClone.error.code === '42703' ||
+              extClone.error.message?.includes('template_content');
+            if (isMissingCol) {
+              await supabase.from('documents').insert({
+                id: docCopiado.id,
+                kit_id: docCopiado.kit_id,
+                name: docCopiado.name,
+                kind: docCopiado.kind,
+                template_file_path: docCopiado.template_file_path,
+                order_index: docCopiado.order_index,
+                created_at: docCopiado.created_at,
+              });
+            }
+          }
         }
+
+        dataStore.documents.set(docCopiado.id, docCopiado);
       }
+    }
+
+    if (supabase) {
+      await supabase.from('audit_log').insert({
+        user_id: auth.session.id,
+        action: 'admin_kit_criado',
+        target_id: novoKit.id,
+        metadata: { name: novoKit.name },
+      });
     }
 
     dataStore.auditLogs.unshift({

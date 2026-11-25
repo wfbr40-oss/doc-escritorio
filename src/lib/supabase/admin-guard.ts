@@ -50,6 +50,14 @@ export function slugifyId(prefix: string, name: string): string {
 }
 
 /**
+ * Verifica se o nome do arquivo possui extensão .docx.
+ */
+export function isDocxFileName(fileName?: string | null): boolean {
+  if (!fileName) return false;
+  return fileName.trim().toLowerCase().endsWith('.docx');
+}
+
+/**
  * Valida se o buffer enviado é um arquivo .docx OpenXML válido contendo word/document.xml.
  */
 export async function validateDocxBuffer(bytes: Uint8Array): Promise<boolean> {
@@ -58,8 +66,40 @@ export async function validateDocxBuffer(bytes: Uint8Array): Promise<boolean> {
       return false;
     }
     const zip = await JSZip.loadAsync(bytes);
-    return Boolean(zip.file('word/document.xml'));
+    return Object.keys(zip.files).some(
+      (entry) => entry.toLowerCase() === 'word/document.xml'
+    );
   } catch {
     return false;
   }
+}
+
+/**
+ * Traduz códigos de erro do Supabase/Postgres para mensagens claras em português.
+ */
+export function formatSupabaseWriteError(
+  error: { code?: string; message?: string; statusCode?: string | number } | null | undefined,
+  fallback: string
+): string {
+  if (!error) return fallback;
+  const code = error.code || '';
+  const msg = (error.message || '').toLowerCase();
+
+  if (code === '42501' || msg.includes('row-level security') || msg.includes('permission denied')) {
+    return "Permissão negada no Supabase. Confirme se seu usuário possui role = 'admin' na tabela profiles e se as políticas SQL foram aplicadas.";
+  }
+  if (code === '42P01' || msg.includes('does not exist')) {
+    return 'Estrutura não encontrada no Supabase. Execute as migrações SQL do projeto no painel do Supabase.';
+  }
+  if (code === '23503' || msg.includes('foreign key')) {
+    return 'Referência não encontrada no banco de dados (kit ou modelo pai inexistente).';
+  }
+  if (code === '23505' || msg.includes('duplicate key')) {
+    return 'Já existe um registro com este identificador no Supabase.';
+  }
+  if (msg.includes('bucket') && msg.includes('not found')) {
+    return "Bucket 'molduras' não encontrado no Storage do Supabase. Execute a migração 0003_storage.sql.";
+  }
+
+  return error.message ? `${fallback} (${error.message})` : fallback;
 }

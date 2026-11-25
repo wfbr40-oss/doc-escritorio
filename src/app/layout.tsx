@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { ToastViewport } from '@/components/ui/ToastViewport';
 
 export const metadata: Metadata = {
   title: 'Gerador de Documentos Previdenciários',
@@ -19,7 +20,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        {children}
+        <ToastViewport />
+      </body>
     </html>
   );
 }

@@ -2,6 +2,11 @@ import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
 import {
   dataStore,
   DocumentItem,
+  INITIAL_CLAUSES,
+  INITIAL_DOCUMENTS,
+  INITIAL_KITS,
+  INITIAL_PARAMETERS,
+  INITIAL_VARIANTS,
   Kit,
   Clause,
   ClauseVariant,
@@ -19,17 +24,147 @@ export interface CatalogSnapshot {
   parameters: Parameter[];
 }
 
+type SupabaseClientType = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Garante que o kit informado exista na tabela public.kits do Supabase antes de salvar documentos vinculados.
+ */
+export async function ensureKitExistsInSupabase(
+  supabase: SupabaseClientType,
+  kitId: string
+): Promise<{ error: { code?: string; message?: string } | null }> {
+  const kit = dataStore.kits.get(kitId) || INITIAL_KITS.find((k) => k.id === kitId);
+  if (!kit) {
+    return { error: null };
+  }
+
+  const { error } = await supabase
+    .from('kits')
+    .upsert(
+      {
+        id: kit.id,
+        name: kit.name,
+        description: kit.description || '',
+        created_at: kit.created_at,
+      },
+      { onConflict: 'id', ignoreDuplicates: true }
+    );
+
+  return { error };
+}
+
+/**
+ * Garante que um documento (e seu kit pai) exista em public.documents antes de registrar documentos gerados.
+ */
+export async function ensureDocumentExistsInSupabase(
+  supabase: SupabaseClientType,
+  doc: DocumentItem
+): Promise<{ error: { code?: string; message?: string } | null }> {
+  const kitRes = await ensureKitExistsInSupabase(supabase, doc.kit_id);
+  if (kitRes.error) return kitRes;
+
+  const { error } = await supabase
+    .from('documents')
+    .upsert(
+      {
+        id: doc.id,
+        kit_id: doc.kit_id,
+        name: doc.name,
+        kind: doc.kind,
+        template_file_path: doc.template_file_path,
+        order_index: doc.order_index,
+        created_at: doc.created_at,
+      },
+      { onConflict: 'id', ignoreDuplicates: true }
+    );
+
+  return { error };
+}
+
+/**
+ * Semeia kits, documentos, cláusulas, variantes e parâmetros iniciais no Supabase quando o catálogo ainda está vazio.
+ */
+export async function ensureSeedCatalogInSupabase(
+  supabase: SupabaseClientType
+): Promise<void> {
+  try {
+    const kitsPayload = INITIAL_KITS.map((k) => ({
+      id: k.id,
+      name: k.name,
+      description: k.description,
+      created_at: k.created_at,
+    }));
+    const { error: kitErr } = await supabase
+      .from('kits')
+      .upsert(kitsPayload, { onConflict: 'id', ignoreDuplicates: true });
+    if (kitErr) return;
+
+    const docsPayload = INITIAL_DOCUMENTS.map((d) => ({
+      id: d.id,
+      kit_id: d.kit_id,
+      name: d.name,
+      kind: d.kind,
+      template_file_path: d.template_file_path,
+      order_index: d.order_index,
+      created_at: d.created_at,
+    }));
+    await supabase
+      .from('documents')
+      .upsert(docsPayload, { onConflict: 'id', ignoreDuplicates: true });
+
+    await supabase.from('clauses').upsert(
+      INITIAL_CLAUSES.map((c) => ({
+        id: c.id,
+        document_id: c.document_id,
+        name: c.name,
+        key: c.key,
+        created_at: c.created_at,
+      })),
+      { onConflict: 'id', ignoreDuplicates: true }
+    );
+
+    await supabase.from('clause_variants').upsert(
+      INITIAL_VARIANTS.map((v) => ({
+        id: v.id,
+        clause_id: v.clause_id,
+        key: v.key,
+        name: v.name,
+        text_paragraphs: v.text_paragraphs,
+        is_default: v.is_default,
+        created_at: v.created_at,
+      })),
+      { onConflict: 'id', ignoreDuplicates: true }
+    );
+
+    await supabase.from('parameters').upsert(
+      INITIAL_PARAMETERS.map((p) => ({
+        id: p.id,
+        document_id: p.document_id,
+        key: p.key,
+        label: p.label,
+        default_value: p.default_value,
+        created_at: p.created_at,
+      })),
+      { onConflict: 'id', ignoreDuplicates: true }
+    );
+  } catch {
+    // Semeadura automática ignora erros caso o usuário atual não tenha permissão de escrita
+  }
+}
+
 /**
  * Garante sincronização inicial segura entre Supabase e dataStore em memória.
  * Nunca lança erro caso o banco remoto não tenha dados ou colunas estendidas ainda.
  */
-export async function syncCatalogFromSupabase(): Promise<void> {
+export async function syncCatalogFromSupabase(options?: {
+  seedIfEmpty?: boolean;
+}): Promise<void> {
   if (!isSupabaseConfigured()) return;
 
   try {
     const supabase = await createClient();
 
-    const [kitsRes, docsExtRes, clausesRes, variantsRes, paramsRes] = await Promise.all([
+    let [kitsRes, docsExtRes, clausesRes, variantsRes, paramsRes] = await Promise.all([
       supabase.from('kits').select('id, name, description, created_at').order('created_at', { ascending: true }),
       supabase
         .from('documents')
@@ -39,6 +174,20 @@ export async function syncCatalogFromSupabase(): Promise<void> {
       supabase.from('clause_variants').select('id, clause_id, key, name, text_paragraphs, is_default, created_at'),
       supabase.from('parameters').select('id, document_id, key, label, default_value, created_at'),
     ]);
+
+    if (!kitsRes.error && kitsRes.data && kitsRes.data.length === 0 && options?.seedIfEmpty) {
+      await ensureSeedCatalogInSupabase(supabase);
+      [kitsRes, docsExtRes, clausesRes, variantsRes, paramsRes] = await Promise.all([
+        supabase.from('kits').select('id, name, description, created_at').order('created_at', { ascending: true }),
+        supabase
+          .from('documents')
+          .select('id, kit_id, name, kind, template_file_path, template_content, order_index, created_at')
+          .order('order_index', { ascending: true }),
+        supabase.from('clauses').select('id, document_id, name, key, created_at'),
+        supabase.from('clause_variants').select('id, clause_id, key, name, text_paragraphs, is_default, created_at'),
+        supabase.from('parameters').select('id, document_id, key, label, default_value, created_at'),
+      ]);
+    }
 
     const docsRes = !docsExtRes.error
       ? docsExtRes

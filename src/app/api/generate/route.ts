@@ -7,10 +7,12 @@ import { ClienteRender } from '@/src/lib/cliente/qualificacao';
 import { montarRenderData, AjustesPontuais } from '@/src/lib/modelos/montar';
 import { renderDocx } from '@/src/lib/docx/render';
 import {
+  ensureDocumentExistsInSupabase,
   isKitAllowedForUser,
   obterMolduraDocumento,
   syncCatalogFromSupabase,
 } from '@/src/lib/modelos/catalog';
+import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
 import { dataStore, INITIAL_DOCUMENTS } from '@/src/lib/supabase/store';
 import { logSeguro } from '@/src/lib/logs/seguro';
 
@@ -41,7 +43,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await syncCatalogFromSupabase();
+    await syncCatalogFromSupabase({ seedIfEmpty: session.role === 'admin' });
 
     const body: SolicitacaoGeracao = await req.json();
     const { cliente, kitId = 'kit_previdenciario', documentos, assinatura } = body;
@@ -119,6 +121,8 @@ export async function POST(req: NextRequest) {
         ? `${partesNome[0]} ${partesNome[partesNome.length - 1]}`
         : partesNome[0];
 
+    const supabase = isSupabaseConfigured() ? await createClient() : null;
+
     // 3. Processamento de cada documento
     for (const docSolicitado of documentos) {
       const docDef =
@@ -178,7 +182,52 @@ export async function POST(req: NextRequest) {
         };
       }
 
-      // Armazena no dataStore / Storage
+      const enrichedSnapshot = {
+        ...snapshotData,
+        documentName: docDef.name,
+        userName: session.name,
+        clientMaskedName: maskedClientName,
+      };
+
+      // Persiste no Supabase Storage ('gerados') e tabela generated_documents quando configurado
+      if (supabase) {
+        try {
+          if (session.role === 'admin') {
+            await ensureDocumentExistsInSupabase(supabase, docDef);
+          }
+
+          const storageObjectPath = `${batchId}/${recordId}.docx`;
+          await supabase.storage.from('gerados').upload(storageObjectPath, fileBytes, {
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            upsert: false,
+          });
+
+          const { error: genErr } = await supabase.from('generated_documents').insert({
+            id: recordId,
+            batch_id: batchId,
+            document_id: docDef.id,
+            user_id: session.id,
+            snapshot: enrichedSnapshot,
+            file_path: filePath,
+            status: 'ativo',
+            expires_at: expiresAt,
+            created_at: agora.toISOString(),
+          });
+
+          if (genErr) {
+            logSeguro('geracao_supabase_insert_aviso', {
+              userId: session.id,
+              documentId: docDef.id,
+              erro: genErr.message,
+            });
+          }
+        } catch {
+          // Mantém fallback em memória caso Storage/tabela ainda não tenham sido provisionados
+        }
+      }
+
+      // Armazena no dataStore em memória
       dataStore.storageFiles.set(filePath, fileBytes);
 
       dataStore.generatedDocs.set(recordId, {
@@ -191,7 +240,7 @@ export async function POST(req: NextRequest) {
         client_masked_name: maskedClientName,
         file_path: filePath,
         status: 'ativo',
-        snapshot: snapshotData,
+        snapshot: enrichedSnapshot,
         file_bytes: fileBytes,
         expires_at: expiresAt,
         created_at: agora.toISOString(),
@@ -217,6 +266,28 @@ export async function POST(req: NextRequest) {
 
     const zipFilePath = `gerados/${batchId}/kit_completo.zip`;
     dataStore.storageFiles.set(zipFilePath, zipBytes);
+
+    if (supabase) {
+      try {
+        await supabase.storage
+          .from('gerados')
+          .upload(`${batchId}/kit_completo.zip`, zipBytes, {
+            contentType: 'application/zip',
+            upsert: false,
+          });
+
+        await supabase.from('audit_log').insert({
+          user_id: session.id,
+          action: 'geracao_kit',
+          target_id: batchId,
+          metadata: {
+            totalDocumentos: itensGerados.length,
+          },
+        });
+      } catch {
+        // Melhor esforço
+      }
+    }
 
     // 5. Registro de Auditoria e Log Seguro (sem PII de cliente)
     dataStore.auditLogs.unshift({

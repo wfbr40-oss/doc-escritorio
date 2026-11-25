@@ -243,4 +243,64 @@ describe('Administração de Modelos, Kits e Usuários', () => {
     expect(catData.kits.some((k: { id: string }) => k.id === 'kit_previdenciario')).toBe(true);
     expect(catData.kits.some((k: { id: string }) => k.id === kitIdRestrito)).toBe(false);
   });
+
+  it('aceita upload de arquivo .docx válido e recusa outro tipo de arquivo especificando .docx', async () => {
+    setTestSession({
+      id: 'user-amanda-admin',
+      name: 'Dra. Amanda Oliveira',
+      role: 'admin',
+    });
+
+    // 1. Rejeita arquivo .pdf especificando que deve ser em .docx
+    const pdfForm = new FormData();
+    pdfForm.append('name', 'Modelo PDF Inválido');
+    pdfForm.append('kit_id', 'kit_previdenciario');
+    pdfForm.append('kind', 'template');
+    pdfForm.append(
+      'file',
+      new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'contrato.pdf', {
+        type: 'application/pdf',
+      })
+    );
+
+    const reqInvalid = {
+      headers: new Headers({ 'content-type': 'multipart/form-data' }),
+      formData: async () => pdfForm,
+    } as unknown as NextRequest;
+
+    const resInvalid = await createModelPost(reqInvalid);
+    expect(resInvalid.status).toBe(400);
+    const bodyInvalid = await resInvalid.json();
+    expect(bodyInvalid.erro.toLowerCase()).toContain('.docx');
+
+    // 2. Aceita arquivo .docx válido via FormData
+    const zip = new JSZip();
+    zip.file(
+      'word/document.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{{CLIENTE_NOME}}</w:t></w:r></w:p></w:body></w:document>'
+    );
+    const docxBytes = await zip.generateAsync({ type: 'uint8array' });
+
+    const docxForm = new FormData();
+    docxForm.append('name', 'Requerimento Anexado DOCX');
+    docxForm.append('kit_id', 'kit_previdenciario');
+    docxForm.append('kind', 'template');
+    docxForm.append(
+      'file',
+      new File([docxBytes.buffer as ArrayBuffer], 'requerimento.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      })
+    );
+
+    const reqValid = {
+      headers: new Headers({ 'content-type': 'multipart/form-data' }),
+      formData: async () => docxForm,
+    } as unknown as NextRequest;
+
+    const resValid = await createModelPost(reqValid);
+    expect(resValid.status).toBe(201);
+    const bodyValid = await resValid.json();
+    expect(dataStore.documents.has(bodyValid.document.id)).toBe(true);
+    expect(dataStore.storageFiles.has(bodyValid.document.template_file_path)).toBe(true);
+  });
 });

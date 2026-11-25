@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getSessionProfile } from '@/src/lib/supabase/session';
-import { dataStore } from '@/src/lib/supabase/store';
+import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
+import { dataStore, GeneratedDocument } from '@/src/lib/supabase/store';
 import { logSeguro } from '@/src/lib/logs/seguro';
 
 export async function GET(
@@ -18,7 +19,41 @@ export async function GET(
     }
 
     const { id } = await params;
-    const doc = dataStore.generatedDocs.get(id);
+    let doc: GeneratedDocument | undefined = dataStore.generatedDocs.get(id);
+    const supabase = isSupabaseConfigured() ? await createClient() : null;
+
+    if (!doc && supabase) {
+      const { data: row } = await supabase
+        .from('generated_documents')
+        .select('id, batch_id, document_id, user_id, snapshot, file_path, status, expires_at, created_at')
+        .eq('id', id)
+        .single();
+
+      if (row) {
+        const snap =
+          row.snapshot && typeof row.snapshot === 'object'
+            ? (row.snapshot as Record<string, unknown>)
+            : null;
+        doc = {
+          id: row.id,
+          batch_id: row.batch_id,
+          document_id: row.document_id,
+          document_name:
+            (typeof snap?.documentName === 'string' && snap.documentName) ||
+            row.document_id,
+          user_id: row.user_id || '',
+          user_name: (typeof snap?.userName === 'string' && snap.userName) || 'Usuário',
+          client_masked_name:
+            (typeof snap?.clientMaskedName === 'string' && snap.clientMaskedName) ||
+            'Cliente',
+          file_path: row.file_path,
+          status: row.status === 'expirado' ? 'expirado' : 'ativo',
+          snapshot: snap,
+          expires_at: row.expires_at,
+          created_at: row.created_at,
+        };
+      }
+    }
 
     if (!doc) {
       return NextResponse.json(
@@ -34,12 +69,36 @@ export async function GET(
       );
     }
 
-    const fileBytes = dataStore.storageFiles.get(doc.file_path) || doc.file_bytes;
+    let fileBytes = dataStore.storageFiles.get(doc.file_path) || doc.file_bytes;
+
+    if (!fileBytes && supabase) {
+      const objectPath = doc.file_path.replace(/^gerados\//, '');
+      const { data: blob, error: dlErr } = await supabase.storage
+        .from('gerados')
+        .download(objectPath);
+      if (!dlErr && blob) {
+        fileBytes = new Uint8Array(await blob.arrayBuffer());
+        dataStore.storageFiles.set(doc.file_path, fileBytes);
+      }
+    }
+
     if (!fileBytes) {
       return NextResponse.json(
         { erro: 'Arquivo físico não encontrado no armazenamento.' },
         { status: 404 }
       );
+    }
+
+    if (supabase) {
+      try {
+        await supabase.from('audit_log').insert({
+          user_id: session.id,
+          action: 'download',
+          target_id: id,
+        });
+      } catch {
+        // Melhor esforço
+      }
     }
 
     // Grava no audit_log quem baixou (sem dados de cliente)

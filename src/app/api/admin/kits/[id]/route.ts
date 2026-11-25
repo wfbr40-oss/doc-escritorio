@@ -1,6 +1,9 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdminSession } from '@/src/lib/supabase/admin-guard';
+import {
+  formatSupabaseWriteError,
+  requireAdminSession,
+} from '@/src/lib/supabase/admin-guard';
 import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
 import { dataStore } from '@/src/lib/supabase/store';
 import { syncCatalogFromSupabase } from '@/src/lib/modelos/catalog';
@@ -14,7 +17,7 @@ export async function PATCH(
   if (!auth.ok) return auth.response;
 
   try {
-    await syncCatalogFromSupabase();
+    await syncCatalogFromSupabase({ seedIfEmpty: true });
     const { id } = await context.params;
     const existente = dataStore.kits.get(id);
     if (!existente) {
@@ -43,12 +46,19 @@ export async function PATCH(
       const supabase = await createClient();
       const { error } = await supabase
         .from('kits')
-        .update({ name, description })
-        .eq('id', id);
+        .upsert(
+          {
+            id,
+            name,
+            description,
+            created_at: existente.created_at,
+          },
+          { onConflict: 'id' }
+        );
       if (error) {
         return NextResponse.json(
-          { erro: 'Não foi possível atualizar o kit no banco de dados.' },
-          { status: 500 }
+          { erro: formatSupabaseWriteError(error, 'Não foi possível atualizar o kit no Supabase.') },
+          { status: error.code === '42501' ? 403 : 500 }
         );
       }
     }
@@ -71,7 +81,7 @@ export async function DELETE(
   if (!auth.ok) return auth.response;
 
   try {
-    await syncCatalogFromSupabase();
+    await syncCatalogFromSupabase({ seedIfEmpty: true });
     const { id } = await context.params;
     const existente = dataStore.kits.get(id);
     if (!existente) {
@@ -85,25 +95,40 @@ export async function DELETE(
       );
     }
 
+    const docsDoKit = Array.from(dataStore.documents.values()).filter(
+      (doc) => doc.kit_id === id
+    );
+
     if (isSupabaseConfigured()) {
       const supabase = await createClient();
       const { error } = await supabase.from('kits').delete().eq('id', id);
       if (error) {
         return NextResponse.json(
           {
-            erro: 'Não foi possível excluir este kit porque existem documentos gerados vinculados ao histórico.',
+            erro:
+              error.code === '23503'
+                ? 'Não foi possível excluir este kit porque existem documentos gerados vinculados ao histórico.'
+                : formatSupabaseWriteError(error, 'Não foi possível excluir este kit no Supabase.'),
           },
-          { status: 409 }
+          { status: error.code === '23503' ? 409 : error.code === '42501' ? 403 : 500 }
         );
+      }
+
+      if (docsDoKit.length > 0) {
+        try {
+          const objectPaths = docsDoKit.map((d) =>
+            d.template_file_path.replace(/^molduras\//, '')
+          );
+          await supabase.storage.from('molduras').remove(objectPaths);
+        } catch {
+          // Ignora erro de limpeza de Storage se objetos não existirem remotamente
+        }
       }
     }
 
-    // Remove documentos associados do store em memória
-    for (const [docId, doc] of dataStore.documents.entries()) {
-      if (doc.kit_id === id) {
-        dataStore.documents.delete(docId);
-        dataStore.storageFiles.delete(doc.template_file_path);
-      }
+    for (const doc of docsDoKit) {
+      dataStore.documents.delete(doc.id);
+      dataStore.storageFiles.delete(doc.template_file_path);
     }
     dataStore.kits.delete(id);
 

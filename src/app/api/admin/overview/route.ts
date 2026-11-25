@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAdminSession } from '@/src/lib/supabase/admin-guard';
-import { getCatalogForUser } from '@/src/lib/modelos/catalog';
+import { getCatalogForUser, syncCatalogFromSupabase } from '@/src/lib/modelos/catalog';
 import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
 import { dataStore, Profile } from '@/src/lib/supabase/store';
 
@@ -8,6 +8,7 @@ export async function GET() {
   const auth = await requireAdminSession();
   if (!auth.ok) return auth.response;
 
+  await syncCatalogFromSupabase({ seedIfEmpty: true });
   const catalog = await getCatalogForUser(auth.session);
 
   // Carrega lista de usuários (Supabase + dataStore)

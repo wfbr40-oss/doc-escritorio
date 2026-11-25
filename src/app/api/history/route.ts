@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSessionProfile } from '@/src/lib/supabase/session';
-import { dataStore } from '@/src/lib/supabase/store';
+import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
+import { dataStore, GeneratedDocument } from '@/src/lib/supabase/store';
+import { syncCatalogFromSupabase } from '@/src/lib/modelos/catalog';
 import { diasParaExpirar } from '@/src/lib/retencao/purge';
 
 export async function GET() {
@@ -9,8 +11,56 @@ export async function GET() {
     return NextResponse.json({ erro: 'Não autorizado.' }, { status: 401 });
   }
 
+  await syncCatalogFromSupabase();
+
+  const mergedDocs = new Map<string, GeneratedDocument>(dataStore.generatedDocs);
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createClient();
+      const { data: rows, error } = await supabase
+        .from('generated_documents')
+        .select('id, batch_id, document_id, user_id, snapshot, file_path, status, expires_at, created_at')
+        .order('created_at', { ascending: false })
+        .limit(300);
+
+      if (!error && rows) {
+        for (const row of rows) {
+          if (mergedDocs.has(row.id)) continue;
+          const snap =
+            row.snapshot && typeof row.snapshot === 'object'
+              ? (row.snapshot as Record<string, unknown>)
+              : null;
+          const docDef = dataStore.documents.get(row.document_id);
+          mergedDocs.set(row.id, {
+            id: row.id,
+            batch_id: row.batch_id,
+            document_id: row.document_id,
+            document_name:
+              (typeof snap?.documentName === 'string' && snap.documentName) ||
+              docDef?.name ||
+              row.document_id,
+            user_id: row.user_id || '',
+            user_name:
+              (typeof snap?.userName === 'string' && snap.userName) || 'Usuário',
+            client_masked_name:
+              (typeof snap?.clientMaskedName === 'string' && snap.clientMaskedName) ||
+              'Cliente',
+            file_path: row.file_path,
+            status: row.status === 'expirado' ? 'expirado' : 'ativo',
+            snapshot: snap,
+            expires_at: row.expires_at,
+            created_at: row.created_at,
+          });
+        }
+      }
+    } catch {
+      // Fallback para dataStore em memória
+    }
+  }
+
   const agora = new Date();
-  const docs = Array.from(dataStore.generatedDocs.values())
+  const docs = Array.from(mergedDocs.values())
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .map((doc) => {
       const diasRestantes = diasParaExpirar(doc.expires_at, agora);

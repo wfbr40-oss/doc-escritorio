@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getSessionProfile } from '@/src/lib/supabase/session';
+import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
 import { dataStore } from '@/src/lib/supabase/store';
 import { logSeguro } from '@/src/lib/logs/seguro';
 
@@ -19,13 +20,36 @@ export async function GET(
 
     const { batchId } = await params;
     const zipPath = `gerados/${batchId}/kit_completo.zip`;
-    const zipBytes = dataStore.storageFiles.get(zipPath);
+    let zipBytes = dataStore.storageFiles.get(zipPath);
+    const supabase = isSupabaseConfigured() ? await createClient() : null;
+
+    if (!zipBytes && supabase) {
+      const { data: blob, error: dlErr } = await supabase.storage
+        .from('gerados')
+        .download(`${batchId}/kit_completo.zip`);
+      if (!dlErr && blob) {
+        zipBytes = new Uint8Array(await blob.arrayBuffer());
+        dataStore.storageFiles.set(zipPath, zipBytes);
+      }
+    }
 
     if (!zipBytes) {
       return NextResponse.json(
         { erro: 'Arquivo compactado do lote não encontrado ou já expirado.' },
         { status: 404 }
       );
+    }
+
+    if (supabase) {
+      try {
+        await supabase.from('audit_log').insert({
+          user_id: session.id,
+          action: 'download_kit_zip',
+          target_id: batchId,
+        });
+      } catch {
+        // Melhor esforço
+      }
     }
 
     // Grava no audit_log quem baixou o lote

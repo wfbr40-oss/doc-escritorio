@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  formatSupabaseWriteError,
+  isDocxFileName,
   requireAdminSession,
   slugifyId,
   validateDocxBuffer,
@@ -8,7 +10,10 @@ import {
 import { createClient, isSupabaseConfigured } from '@/src/lib/supabase/server';
 import { dataStore, DocumentItem, TemplateContent } from '@/src/lib/supabase/store';
 import { createTemplateDocx } from '@/src/lib/docx/builder';
-import { syncCatalogFromSupabase } from '@/src/lib/modelos/catalog';
+import {
+  ensureKitExistsInSupabase,
+  syncCatalogFromSupabase,
+} from '@/src/lib/modelos/catalog';
 import { logSeguro } from '@/src/lib/logs/seguro';
 
 export async function POST(req: NextRequest) {
@@ -16,7 +21,7 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return auth.response;
 
   try {
-    await syncCatalogFromSupabase();
+    await syncCatalogFromSupabase({ seedIfEmpty: true });
 
     const contentType = req.headers.get('content-type') || '';
     let name = '';
@@ -45,12 +50,40 @@ export async function POST(req: NextRequest) {
       }
 
       const file = formData.get('file');
-      if (file && file instanceof File && file.size > 0) {
+      if (
+        file &&
+        typeof file === 'object' &&
+        'arrayBuffer' in file &&
+        typeof file.arrayBuffer === 'function' &&
+        'size' in file &&
+        Number(file.size) > 0
+      ) {
+        const fileName = 'name' in file && typeof file.name === 'string' ? file.name : '';
+        if (fileName && !isDocxFileName(fileName)) {
+          return NextResponse.json(
+            {
+              erro: 'Formato de arquivo não permitido. O arquivo anexado deve ser em formato .docx.',
+            },
+            { status: 400 }
+          );
+        }
+
         const bytes = new Uint8Array(await file.arrayBuffer());
+        if (bytes.byteLength > 15 * 1024 * 1024) {
+          return NextResponse.json(
+            {
+              erro: 'O arquivo excede o tamanho máximo de 15 MB. O arquivo anexado deve ser um .docx de até 15 MB.',
+            },
+            { status: 400 }
+          );
+        }
+
         const valido = await validateDocxBuffer(bytes);
         if (!valido) {
           return NextResponse.json(
-            { erro: 'Arquivo inválido. Envie um documento .docx válido do Microsoft Word.' },
+            {
+              erro: 'Arquivo inválido ou corrompido. O documento anexado deve ser um arquivo .docx válido.',
+            },
             { status: 400 }
           );
         }
@@ -140,16 +173,50 @@ export async function POST(req: NextRequest) {
     if (isSupabaseConfigured()) {
       const supabase = await createClient();
 
-      // Upload para bucket privado 'molduras' (melhor esforço sem bloquear caso bucket ainda não exista)
-      try {
-        const objectPath = templateFilePath.replace(/^molduras\//, '');
-        await supabase.storage.from('molduras').upload(objectPath, finalBytes, {
+      // Garante que o kit pai exista na tabela public.kits antes de inserir o modelo
+      const kitEnsure = await ensureKitExistsInSupabase(supabase, kitId);
+      if (kitEnsure.error) {
+        logSeguro('admin_modelo_kit_ensure_erro', {
+          userId: auth.session.id,
+          erro: kitEnsure.error.message,
+        });
+        return NextResponse.json(
+          {
+            erro: formatSupabaseWriteError(
+              kitEnsure.error,
+              'Não foi possível validar o kit pai no Supabase.'
+            ),
+          },
+          { status: kitEnsure.error.code === '42501' ? 403 : 500 }
+        );
+      }
+
+      // Envia o arquivo .docx para o bucket privado 'molduras'
+      const objectPath = templateFilePath.replace(/^molduras\//, '');
+      const { error: storageError } = await supabase.storage
+        .from('molduras')
+        .upload(objectPath, finalBytes, {
           contentType:
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          upsert: true,
+          upsert: false,
         });
-      } catch {
-        // Storage remoto opcional caso bucket não tenha sido provisionado ainda
+
+      if (storageError) {
+        logSeguro('admin_modelo_storage_erro', {
+          userId: auth.session.id,
+          erro: storageError.message,
+        });
+        if (uploadedBytes) {
+          return NextResponse.json(
+            {
+              erro: formatSupabaseWriteError(
+                storageError,
+                "Não foi possível enviar o arquivo .docx para o Storage do Supabase (bucket 'molduras')."
+              ),
+            },
+            { status: 500 }
+          );
+        }
       }
 
       const extInsert = await supabase.from('documents').insert({
@@ -164,23 +231,59 @@ export async function POST(req: NextRequest) {
       });
 
       if (extInsert.error) {
-        const basicInsert = await supabase.from('documents').insert({
-          id: novoDoc.id,
-          kit_id: novoDoc.kit_id,
-          name: novoDoc.name,
-          kind: novoDoc.kind,
-          template_file_path: novoDoc.template_file_path,
-          order_index: novoDoc.order_index,
-          created_at: novoDoc.created_at,
-        });
+        const isMissingCol =
+          extInsert.error.code === '42703' ||
+          extInsert.error.message?.includes('template_content');
 
-        if (basicInsert.error) {
+        if (isMissingCol) {
+          const basicInsert = await supabase.from('documents').insert({
+            id: novoDoc.id,
+            kit_id: novoDoc.kit_id,
+            name: novoDoc.name,
+            kind: novoDoc.kind,
+            template_file_path: novoDoc.template_file_path,
+            order_index: novoDoc.order_index,
+            created_at: novoDoc.created_at,
+          });
+
+          if (basicInsert.error) {
+            logSeguro('admin_modelo_db_erro', {
+              userId: auth.session.id,
+              erro: basicInsert.error.message,
+            });
+            return NextResponse.json(
+              {
+                erro: formatSupabaseWriteError(
+                  basicInsert.error,
+                  'Não foi possível salvar o novo modelo no Supabase.'
+                ),
+              },
+              { status: basicInsert.error.code === '42501' ? 403 : 500 }
+            );
+          }
+        } else {
+          logSeguro('admin_modelo_db_erro', {
+            userId: auth.session.id,
+            erro: extInsert.error.message,
+          });
           return NextResponse.json(
-            { erro: 'Não foi possível salvar o novo modelo no banco de dados.' },
-            { status: 500 }
+            {
+              erro: formatSupabaseWriteError(
+                extInsert.error,
+                'Não foi possível salvar o novo modelo no Supabase.'
+              ),
+            },
+            { status: extInsert.error.code === '42501' ? 403 : 500 }
           );
         }
       }
+
+      await supabase.from('audit_log').insert({
+        user_id: auth.session.id,
+        action: 'admin_modelo_criado',
+        target_id: novoDoc.id,
+        metadata: { kitId: novoDoc.kit_id, kind: novoDoc.kind },
+      });
     }
 
     dataStore.storageFiles.set(templateFilePath, finalBytes);
