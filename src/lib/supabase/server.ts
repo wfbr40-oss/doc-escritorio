@@ -8,6 +8,8 @@ export interface UserProfile {
   id: string;
   name: string;
   role: ProfileRole;
+  ativo?: boolean;
+  allowed_kit_ids?: string[] | null;
 }
 
 let testSessionProfile: UserProfile | null | undefined = undefined;
@@ -72,7 +74,7 @@ export async function createClient() {
 
 /**
  * Retorna o perfil do usuário ativo na sessão: { id, name, role }.
- * Retorna null se não houver usuário autenticado.
+ * Retorna null se não houver usuário autenticado ou se o acesso estiver bloqueado.
  */
 export async function getSessionProfile(): Promise<UserProfile | null> {
   if (testSessionProfile !== undefined) {
@@ -99,7 +101,7 @@ export async function getSessionProfile(): Promise<UserProfile | null> {
         dataStore.profiles.get(userId) ||
         INITIAL_PROFILES.find((p) => p.id === userId);
 
-      if (!localProfile) {
+      if (!localProfile || localProfile.ativo === false) {
         return null;
       }
 
@@ -107,6 +109,8 @@ export async function getSessionProfile(): Promise<UserProfile | null> {
         id: localProfile.id,
         name: localProfile.name,
         role: localProfile.role,
+        ativo: true,
+        allowed_kit_ids: localProfile.allowed_kit_ids ?? null,
       };
     }
 
@@ -126,26 +130,60 @@ export async function getSessionProfile(): Promise<UserProfile | null> {
       return null;
     }
 
-    const { data: profile, error: profileError } = await supabase
+    // Tenta buscar colunas estendidas (ativo, allowed_kit_ids) e faz fallback caso migração 0007 não tenha rodado
+    let profileData: {
+      id: string;
+      name: string;
+      role: string;
+      ativo?: boolean;
+      allowed_kit_ids?: string[] | null;
+    } | null = null;
+
+    const extRes = await supabase
       .from('profiles')
-      .select('id, name, role')
+      .select('id, name, role, ativo, allowed_kit_ids')
       .eq('id', user.id)
       .single();
 
-    if (profileError || !profile) {
+    if (!extRes.error && extRes.data) {
+      profileData = extRes.data;
+    } else {
+      const basicRes = await supabase
+        .from('profiles')
+        .select('id, name, role')
+        .eq('id', user.id)
+        .single();
+      if (!basicRes.error && basicRes.data) {
+        profileData = basicRes.data;
+      }
+    }
+
+    const localOverride = dataStore.profiles.get(user.id);
+    if (profileData?.ativo === false || localOverride?.ativo === false) {
+      return null;
+    }
+
+    if (!profileData) {
       const name = user.user_metadata?.name || user.email?.split('@')[0] || 'Usuário';
       const role = (user.user_metadata?.role as ProfileRole) || 'user';
       return {
         id: user.id,
         name,
         role: role === 'admin' ? 'admin' : 'user',
+        ativo: true,
+        allowed_kit_ids: localOverride?.allowed_kit_ids ?? null,
       };
     }
 
     return {
-      id: profile.id,
-      name: profile.name,
-      role: profile.role as ProfileRole,
+      id: profileData.id,
+      name: profileData.name,
+      role: profileData.role as ProfileRole,
+      ativo: true,
+      allowed_kit_ids:
+        profileData.allowed_kit_ids !== undefined
+          ? profileData.allowed_kit_ids
+          : localOverride?.allowed_kit_ids ?? null,
     };
   } catch {
     return null;

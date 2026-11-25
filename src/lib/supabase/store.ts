@@ -11,6 +11,8 @@ export interface Profile {
   name: string;
   email: string;
   role: 'user' | 'admin';
+  ativo?: boolean;
+  allowed_kit_ids?: string[] | null;
   created_at: string;
 }
 
@@ -21,12 +23,19 @@ export interface Kit {
   created_at: string;
 }
 
+export interface TemplateContent {
+  titulo: string;
+  subtitulo?: string;
+  paragrafos: string[];
+}
+
 export interface DocumentItem {
   id: string;
   kit_id: string;
   name: string;
   kind: 'template' | 'static';
   template_file_path: string;
+  template_content?: TemplateContent | null;
   order_index: number;
   created_at: string;
 }

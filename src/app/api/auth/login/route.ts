@@ -75,11 +75,33 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const { data: profile } = await supabase
+      const extProfile = await supabase
         .from('profiles')
-        .select('id, name, role')
+        .select('id, name, role, ativo')
         .eq('id', data.user.id)
         .single();
+
+      const profile = !extProfile.error
+        ? extProfile.data
+        : (
+            await supabase
+              .from('profiles')
+              .select('id, name, role')
+              .eq('id', data.user.id)
+              .single()
+          ).data;
+
+      const localOverride = dataStore.profiles.get(data.user.id);
+      if (
+        (profile && 'ativo' in profile && profile.ativo === false) ||
+        localOverride?.ativo === false
+      ) {
+        await supabase.auth.signOut();
+        return NextResponse.json(
+          { erro: 'Seu acesso foi desativado pelo administrador do escritório.' },
+          { status: 403 }
+        );
+      }
 
       try {
         await supabase.from('user_sessions').insert({ user_id: data.user.id });
@@ -123,6 +145,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { erro: 'Credenciais inválidas. Verifique seu e-mail e senha.' },
         { status: 401 }
+      );
+    }
+
+    if (profile.ativo === false) {
+      return NextResponse.json(
+        { erro: 'Seu acesso foi desativado pelo administrador do escritório.' },
+        { status: 403 }
       );
     }
 

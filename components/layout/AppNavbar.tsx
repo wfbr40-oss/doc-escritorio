@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LogOut, Scale, FileText, History } from 'lucide-react';
+import { LogOut, Scale, FileText, History, SlidersHorizontal } from 'lucide-react';
 
 interface NavbarProps {
   usuario?: {
@@ -15,6 +15,7 @@ interface NavbarProps {
 
 export function AppNavbar({ usuario }: NavbarProps) {
   const pathname = usePathname();
+  const ehAdmin = usuario?.role === 'admin';
 
   const handleLogout = async () => {
     try {
@@ -30,7 +31,7 @@ export function AppNavbar({ usuario }: NavbarProps) {
   return (
     <header className="bg-slate-900 border-b border-slate-800 text-slate-100 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between gap-8 h-16">
+        <div className="flex items-center justify-between gap-4 sm:gap-8 h-16">
           {/* Zone 1: Single text element wordmark */}
           <Link
             href="/"
@@ -43,7 +44,7 @@ export function AppNavbar({ usuario }: NavbarProps) {
           </Link>
 
           {/* Zone 2: Clean single-line text navigation links */}
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium">
+          <nav className="flex items-center gap-4 sm:gap-8 text-sm font-medium overflow-x-auto">
             <Link
               href="/novo"
               className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
@@ -65,8 +66,23 @@ export function AppNavbar({ usuario }: NavbarProps) {
               }`}
             >
               <History className="w-4 h-4" />
-              <span>Histórico & Lotes</span>
+              <span className="hidden sm:inline">Histórico & Lotes</span>
+              <span className="sm:hidden">Histórico</span>
             </Link>
+
+            {ehAdmin && (
+              <Link
+                href="/admin"
+                className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
+                  pathname.startsWith('/admin')
+                    ? 'text-amber-400 font-semibold'
+                    : 'text-slate-400 hover:text-slate-100'
+                }`}
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                <span>Administração</span>
+              </Link>
+            )}
           </nav>
 
           {/* Zone 3: 1 primary action / user info & logout */}

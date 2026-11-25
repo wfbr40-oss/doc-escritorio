@@ -5,6 +5,8 @@ export interface UserSessionProfile {
   name: string;
   role: 'user' | 'admin';
   email?: string;
+  ativo?: boolean;
+  allowed_kit_ids?: string[] | null;
 }
 
 let testSessionOverride: UserSessionProfile | null | undefined = undefined;

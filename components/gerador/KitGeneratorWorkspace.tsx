@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import {
@@ -19,8 +19,15 @@ import { formatCpf, isValidCpf } from '@/src/lib/cliente/cpf';
 import { formatCep } from '@/src/lib/cliente/cep';
 import { formatDataExtenso } from '@/src/lib/cliente/data';
 
+interface KitCatalogo {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 interface DocumentoCatalogo {
   id: string;
+  kit_id?: string;
   name: string;
   kind: 'template' | 'static';
   order_index: number;
@@ -110,6 +117,17 @@ export function KitGeneratorWorkspace() {
     formatDataExtenso(new Date())
   );
 
+  const [kitsCatalogo, setKitsCatalogo] = useState<KitCatalogo[]>([
+    {
+      id: 'kit_previdenciario',
+      name: 'Kit Previdenciário Completo (Ação Judicial & Administrativa)',
+    },
+  ]);
+  const [kitSelecionadoId, setKitSelecionadoId] = useState<string>('kit_previdenciario');
+  const [todosDocumentos, setTodosDocumentos] = useState<DocumentoCatalogo[]>(
+    DOCUMENTOS_KIT.map((d) => ({ ...d, kit_id: 'kit_previdenciario' }))
+  );
+
   const [selecionados, setSelecionados] = useState<string[]>(
     DOCUMENTOS_KIT.map((d) => d.id)
   );
@@ -117,6 +135,51 @@ export function KitGeneratorWorkspace() {
   const [gerando, setGerando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ResultadoGeracao | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    fetch('/api/catalog', { credentials: 'same-origin' })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!ativo) return;
+        if (Array.isArray(data.kits) && data.kits.length > 0) {
+          setKitsCatalogo(data.kits);
+          const kitInicial = data.kits[0].id;
+          setKitSelecionadoId(kitInicial);
+          if (Array.isArray(data.documents)) {
+            setTodosDocumentos(data.documents);
+            setSelecionados(
+              data.documents
+                .filter((d: DocumentoCatalogo) => d.kit_id === kitInicial)
+                .map((d: DocumentoCatalogo) => d.id)
+            );
+          }
+        }
+      })
+      .catch(() => {
+        // Mantém catálogo padrão caso falhe a atualização em segundo plano
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  const documentosDoKitAtivo = useMemo(
+    () =>
+      todosDocumentos
+        .filter((d) => !d.kit_id || d.kit_id === kitSelecionadoId)
+        .sort((a, b) => a.order_index - b.order_index),
+    [todosDocumentos, kitSelecionadoId]
+  );
+
+  const handleTrocarKit = (novoKitId: string) => {
+    setKitSelecionadoId(novoKitId);
+    const docsNovoKit = todosDocumentos
+      .filter((d) => d.kit_id === novoKitId)
+      .map((d) => d.id);
+    setSelecionados(docsNovoKit);
+  };
 
   const handleGeneroChange = (novoGenero: Genero) => {
     setGenero(novoGenero);
@@ -206,8 +269,9 @@ export function KitGeneratorWorkspace() {
 
     setGerando(true);
     try {
-      const documentosPayload = DOCUMENTOS_KIT.filter((d) => selecionados.includes(d.id)).map(
-        (d) => ({
+      const documentosPayload = documentosDoKitAtivo
+        .filter((d) => selecionados.includes(d.id))
+        .map((d) => ({
           documentId: d.id,
           ...(d.id === 'doc_contrato_honorarios'
             ? {
@@ -219,14 +283,14 @@ export function KitGeneratorWorkspace() {
                 },
               }
             : {}),
-        })
-      );
+        }));
 
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify({
+          kitId: kitSelecionadoId,
           cliente: {
             nome: nome.trim(),
             genero,
@@ -600,9 +664,29 @@ export function KitGeneratorWorkspace() {
                 02. Contrato & Composição do Kit
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Escolha a variante contratual e os documentos incluídos no lote.
+                Escolha o kit, a variante contratual e os documentos incluídos no lote.
               </p>
             </div>
+
+            {kitsCatalogo.length > 0 && (
+              <div>
+                <label htmlFor="kitSelect" className="block text-xs font-medium text-slate-300">
+                  Kit de Documentos
+                </label>
+                <select
+                  id="kitSelect"
+                  value={kitSelecionadoId}
+                  onChange={(e) => handleTrocarKit(e.target.value)}
+                  className="mt-1.5 block w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+                >
+                  {kitsCatalogo.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label htmlFor="variante" className="block text-xs font-medium text-slate-300">
@@ -694,58 +778,64 @@ export function KitGeneratorWorkspace() {
 
             <div className="pt-2 border-t border-slate-800">
               <div className="flex items-center justify-between mb-2.5">
-                <span className="text-xs font-medium text-slate-300">
-                  Documentos do Kit ({selecionados.length}/{DOCUMENTOS_KIT.length})
+                <span className="text-xs font-medium text-slate-300 tabular-nums">
+                  Documentos do Kit ({selecionados.length}/{documentosDoKitAtivo.length})
                 </span>
                 <button
                   type="button"
                   onClick={() =>
                     setSelecionados(
-                      selecionados.length === DOCUMENTOS_KIT.length
+                      selecionados.length === documentosDoKitAtivo.length
                         ? []
-                        : DOCUMENTOS_KIT.map((d) => d.id)
+                        : documentosDoKitAtivo.map((d) => d.id)
                     )
                   }
                   className="text-xs text-amber-400 hover:text-amber-300 whitespace-nowrap"
                 >
-                  {selecionados.length === DOCUMENTOS_KIT.length
+                  {selecionados.length === documentosDoKitAtivo.length
                     ? 'Desmarcar todos'
                     : 'Selecionar todos'}
                 </button>
               </div>
 
-              <div className="divide-y divide-slate-800/80 border border-slate-800 rounded-lg bg-slate-950/60">
-                {DOCUMENTOS_KIT.map((doc) => {
-                  const ativo = selecionados.includes(doc.id);
-                  return (
-                    <button
-                      key={doc.id}
-                      type="button"
-                      onClick={() => toggleDocumento(doc.id)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-900/80 transition-colors"
-                    >
-                      <span
-                        className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 ${
-                          ativo
-                            ? 'bg-amber-400 border-amber-400 text-slate-950'
-                            : 'border-slate-600 bg-slate-900'
-                        }`}
+              {documentosDoKitAtivo.length === 0 ? (
+                <div className="p-4 rounded-lg border border-slate-800 bg-slate-950/60 text-xs text-slate-400 text-center">
+                  Nenhum modelo vinculado a este kit ainda.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-800/80 border border-slate-800 rounded-lg bg-slate-950/60">
+                  {documentosDoKitAtivo.map((doc) => {
+                    const ativo = selecionados.includes(doc.id);
+                    return (
+                      <button
+                        key={doc.id}
+                        type="button"
+                        onClick={() => toggleDocumento(doc.id)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-900/80 transition-colors"
                       >
-                        {ativo && <Check className="w-3 h-3" />}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium text-slate-200 truncate">{doc.name}</p>
-                        <p className="text-[11px] text-slate-500">
-                          {doc.kind === 'static'
-                            ? 'Documento estático · Em branco'
-                            : 'Modelo DOCX preenchido'}
-                        </p>
-                      </div>
-                      <FileText className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                    </button>
-                  );
-                })}
-              </div>
+                        <span
+                          className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 ${
+                            ativo
+                              ? 'bg-amber-400 border-amber-400 text-slate-950'
+                              : 'border-slate-600 bg-slate-900'
+                          }`}
+                        >
+                          {ativo && <Check className="w-3 h-3" />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-slate-200 truncate">{doc.name}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {doc.kind === 'static'
+                              ? 'Documento estático · Em branco'
+                              : 'Modelo DOCX preenchido'}
+                          </p>
+                        </div>
+                        <FileText className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 

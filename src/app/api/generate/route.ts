@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import JSZip from 'jszip';
 import { getSessionProfile } from '@/src/lib/supabase/session';
-import { isValidCpf, normalizeCpf } from '@/src/lib/cliente/cpf';
+import { isValidCpf } from '@/src/lib/cliente/cpf';
 import { ClienteRender } from '@/src/lib/cliente/qualificacao';
 import { montarRenderData, AjustesPontuais } from '@/src/lib/modelos/montar';
 import { renderDocx } from '@/src/lib/docx/render';
-import { obterMolduraPadrao } from '@/src/lib/docx/default-molduras';
+import {
+  isKitAllowedForUser,
+  obterMolduraDocumento,
+  syncCatalogFromSupabase,
+} from '@/src/lib/modelos/catalog';
 import { dataStore, INITIAL_DOCUMENTS } from '@/src/lib/supabase/store';
 import { logSeguro } from '@/src/lib/logs/seguro';
 
@@ -37,8 +41,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    await syncCatalogFromSupabase();
+
     const body: SolicitacaoGeracao = await req.json();
     const { cliente, kitId = 'kit_previdenciario', documentos, assinatura } = body;
+
+    if (!isKitAllowedForUser(kitId, session)) {
+      return NextResponse.json(
+        { erro: 'Você não possui permissão para gerar documentos deste kit.' },
+        { status: 403 }
+      );
+    }
 
     // 1. Validação estrita dos dados do cliente
     if (!cliente) {
@@ -114,6 +127,13 @@ export async function POST(req: NextRequest) {
 
       if (!docDef) continue;
 
+      if (!isKitAllowedForUser(docDef.kit_id, session)) {
+        return NextResponse.json(
+          { erro: 'Você não possui permissão para acessar um dos modelos selecionados.' },
+          { status: 403 }
+        );
+      }
+
       const recordId = crypto.randomUUID();
       itemIdsParaLog.push(recordId);
 
@@ -124,7 +144,7 @@ export async function POST(req: NextRequest) {
 
       if (docDef.kind === 'static') {
         // Documento estático: Cadastro de cliente em branco, entregue sem alteração
-        fileBytes = await obterMolduraPadrao(docDef.id);
+        fileBytes = await obterMolduraDocumento(docDef);
         snapshotData = {
           documentId: docDef.id,
           tipo: 'static',
@@ -146,7 +166,7 @@ export async function POST(req: NextRequest) {
           }
         );
 
-        const molduraBytes = await obterMolduraPadrao(docDef.id);
+        const molduraBytes = await obterMolduraDocumento(docDef);
         fileBytes = await renderDocx(molduraBytes, renderData);
 
         snapshotData = {
