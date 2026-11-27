@@ -1504,7 +1504,7 @@ export function AdminWorkspace({ adminAtualId }: AdminWorkspaceProps) {
                     className="self-start sm:self-auto inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 rounded-lg text-xs font-semibold text-red-400 bg-red-950/40 hover:bg-red-900/40 border border-red-500/30 transition-colors whitespace-nowrap shrink-0"
                   >
                     <Trash2 className="w-4 h-4" />
-                    <span>Excluir Todos os Modelos e Kits do Supabase</span>
+                    <span>Excluir Todos os Modelos e Kits</span>
                   </button>
                   <button
                     type="button"
@@ -1529,7 +1529,7 @@ export function AdminWorkspace({ adminAtualId }: AdminWorkspaceProps) {
                       </h2>
                     </div>
                     <p className="text-sm text-slate-300">
-                      Tem certeza absoluta que deseja excluir <strong className="text-white">todos os kits, modelos e cláusulas</strong> do Supabase? Esta ação é irreversível.
+                      Tem certeza absoluta que deseja excluir <strong className="text-white">todos os kits, modelos e cláusulas</strong>? Esta ação é irreversível.
                     </p>
                     <div className="flex items-center justify-end gap-3 pt-2">
                       <button
