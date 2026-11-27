@@ -8,7 +8,8 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/_next') ||
     pathname.includes('/favicon.ico') ||
-    pathname === '/robots.txt'
+    pathname === '/robots.txt' ||
+    pathname === '/logo-jf.svg'
   ) {
     return NextResponse.next();
   }
