@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   LogOut,
-  Scale,
   FileText,
   History,
   SlidersHorizontal,
@@ -90,10 +89,8 @@ export function AppNavbar({ usuario }: NavbarProps) {
             href="/"
             className="text-base font-semibold tracking-tight text-white flex items-center gap-2.5 whitespace-nowrap shrink-0 hover:text-amber-400 transition-colors"
           >
-            <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
-              <Scale className="w-4 h-4" />
-            </div>
-            <span>Kit Previdenciário</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-jf.png" alt="Josenildson Ferreira Advogados" className="h-9 w-auto" />
           </Link>
 
           {/* Zona 2 (Desktop >= lg / 1024px): Abas em linha única */}

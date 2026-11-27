@@ -1,1 +1,51 @@
 @import "tailwindcss";
+
+/*
+  Identidade Josenildson Ferreira Advogados.
+  O app usa as escalas slate/amber do Tailwind; aqui elas são remapeadas
+  para o azul-marinho e o dourado do escritório, sem tocar nos componentes.
+*/
+@theme {
+  --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-garamond), "Times New Roman", serif;
+
+  --color-slate-50: #f6f7fa;
+  --color-slate-100: #eceff4;
+  --color-slate-200: #d9dee7;
+  --color-slate-300: #b9c2d1;
+  --color-slate-400: #8e9bb0;
+  --color-slate-500: #667791;
+  --color-slate-600: #3a4d68;
+  --color-slate-700: #24364f;
+  --color-slate-800: #16253b;
+  --color-slate-900: #0b192d;
+  --color-slate-950: #060f1d;
+
+  --color-amber-50: #fffbeb;
+  --color-amber-100: #fff5cf;
+  --color-amber-200: #ffeba3;
+  --color-amber-300: #ffe082;
+  --color-amber-400: #e9c964;
+  --color-amber-500: #d5b74a;
+  --color-amber-600: #c99a3b;
+  --color-amber-700: #a67c28;
+  --color-amber-800: #7d5d1d;
+  --color-amber-900: #4d3a14;
+  --color-amber-950: #2b2208;
+}
+
+html { color-scheme: dark; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-slate-950);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+::selection { background: var(--color-amber-500); color: var(--color-slate-950); }

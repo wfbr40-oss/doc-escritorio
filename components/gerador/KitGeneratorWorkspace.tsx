@@ -555,9 +555,9 @@ export function KitGeneratorWorkspace() {
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-amber-600/40">
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-white text-balance">
+          <h1 className="text-3xl sm:text-4xl text-amber-300 text-balance">
             Gerar Kit Previdenciário
           </h1>
           <p className="mt-1 text-sm text-slate-400">
@@ -579,7 +579,7 @@ export function KitGeneratorWorkspace() {
         {/* Coluna Esquerda: Dados do Cliente */}
         <section className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-4 sm:p-6 space-y-6">
           <div className="pb-4 border-b border-slate-800">
-            <h2 className="text-base font-semibold text-white">01. Dados do Cliente</h2>
+            <h2 className="text-xl text-amber-200">01. Dados do Cliente</h2>
             <p className="text-xs text-slate-400 mt-0.5">
               Qualificação civil, CPF e endereço para preenchimento automático.
             </p>
@@ -834,7 +834,7 @@ export function KitGeneratorWorkspace() {
         <section className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-4 sm:p-6 space-y-6 flex flex-col justify-between">
           <div className="space-y-6">
             <div className="pb-4 border-b border-slate-800">
-              <h2 className="text-base font-semibold text-white">
+              <h2 className="text-xl text-amber-200">
                 02. Contrato & Composição do Kit
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -1034,7 +1034,7 @@ export function KitGeneratorWorkspace() {
             <div className="flex items-start gap-3">
               <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
               <div>
-                <h2 className="text-base font-semibold text-white">
+                <h2 className="text-xl text-amber-200">
                   Kit gerado com sucesso ({resultado.total}{' '}
                   {resultado.total === 1 ? 'documento' : 'documentos'})
                 </h2>

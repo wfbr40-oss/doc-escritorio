@@ -7,7 +7,6 @@ import {
   Mail,
   User,
   ArrowRight,
-  Scale,
   UserPlus,
 } from 'lucide-react';
 import { showToast } from '@/components/ui/ToastViewport';
@@ -102,16 +101,15 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8 text-slate-100">
       <div className="mx-auto w-full max-w-md">
-        <div className="flex justify-center mb-4">
-          <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-            <Scale className="w-6 h-6" />
-          </div>
+        <div className="flex justify-center mb-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-jf.png" alt="Josenildson Ferreira Advogados" className="h-16 w-auto" />
         </div>
-        <h1 className="text-center text-2xl font-semibold tracking-tight text-white text-balance">
+        <h1 className="text-center text-3xl text-amber-300 text-balance">
           Gerador de Documentos
         </h1>
         <p className="mt-1 text-center text-sm text-slate-400">
-          Kit Previdenciário Oficial · Acesso Corporativo
+          Acesso restrito à equipe do escritório
         </p>
       </div>
 
