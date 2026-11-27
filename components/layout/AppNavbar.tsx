@@ -90,7 +90,7 @@ export function AppNavbar({ usuario }: NavbarProps) {
             className="text-base font-semibold tracking-tight text-white flex items-center gap-2.5 whitespace-nowrap shrink-0 hover:text-amber-400 transition-colors"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-jf.svg" alt="Josenildson Ferreira Advogados" className="h-9 w-auto" />
+            <img src="/logo-jf.webp" alt="Josenildson Ferreira Advogados" className="h-11 w-auto" />
           </Link>
 
           {/* Zona 2 (Desktop >= lg / 1024px): Abas em linha única */}

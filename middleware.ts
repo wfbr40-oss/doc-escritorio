@@ -9,7 +9,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_next') ||
     pathname.includes('/favicon.ico') ||
     pathname === '/robots.txt' ||
-    pathname === '/logo-jf.svg'
+    pathname === '/logo-jf.webp'
   ) {
     return NextResponse.next();
   }
