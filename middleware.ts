@@ -7,7 +7,8 @@ export async function middleware(request: NextRequest) {
   // Rotas internas do Next.js e assets estáticos que não devem ser interceptados
   if (
     pathname.startsWith('/_next') ||
-    pathname.includes('/favicon.ico') ||
+    pathname.startsWith('/favicon') ||
+    pathname === '/apple-touch-icon.png' ||
     pathname === '/robots.txt' ||
     pathname === '/logo-jf.webp'
   ) {

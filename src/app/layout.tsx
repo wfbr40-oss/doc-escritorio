@@ -7,6 +7,16 @@ const garamond = EB_Garamond({ subsets: ['latin'], variable: '--font-garamond', 
 import { ToastViewport } from '@/components/ui/ToastViewport';
 
 export const metadata: Metadata = {
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '48x48' },
+      { url: '/favicon-48x48.png', type: 'image/png', sizes: '48x48' },
+      { url: '/favicon-96x96.png', type: 'image/png', sizes: '96x96' },
+      { url: '/favicon-192x192.png', type: 'image/png', sizes: '192x192' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+    ],
+    apple: { url: '/apple-touch-icon.png', sizes: '180x180' },
+  },
   title: 'Josenildson Ferreira Advogados · Gerador de Documentos',
   description: 'Sistema de emissão e gestão do kit de documentos previdenciários em formato DOCX com histórico e retenção de 1 ano.',
   openGraph: {
