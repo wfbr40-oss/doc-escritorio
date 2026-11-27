@@ -171,6 +171,7 @@ export function AdminWorkspace({ adminAtualId }: AdminWorkspaceProps) {
   const [kitDescricao, setKitDescricao] = useState('');
   const [kitCopiarDe, setKitCopiarDe] = useState('');
   const [confirmarExcluirKitId, setConfirmarExcluirKitId] = useState<string | null>(null);
+  const [confirmarPurge, setConfirmarPurge] = useState(false);
 
   // Formulário de Novo Usuário
   const [usuarioFormAberto, setUsuarioFormAberto] = useState(false);
@@ -423,6 +424,29 @@ export function AdminWorkspace({ adminAtualId }: AdminWorkspaceProps) {
     setKitDescricao(kit.description || '');
     setKitCopiarDe('');
     setKitFormAberto(true);
+  };
+
+  const handlePurgeCatalog = async () => {
+    setSalvando(true);
+    try {
+      const res = await fetch('/api/admin/purge-catalog', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast.error(data.erro || 'Erro ao excluir modelos e kits do Supabase.');
+        setSalvando(false);
+        return;
+      }
+      setConfirmarPurge(false);
+      showToast.success(data.mensagem || 'Modelos e kits excluídos com sucesso.');
+      setSalvando(false);
+      await carregarOverview();
+    } catch {
+      showToast.error('Erro de conexão ao excluir modelos e kits.');
+      setSalvando(false);
+    }
   };
 
   const handleSalvarKit = async (e: React.FormEvent) => {
@@ -1473,15 +1497,61 @@ export function AdminWorkspace({ adminAtualId }: AdminWorkspaceProps) {
                 <p className="text-sm text-slate-400">
                   Organize conjuntos de modelos para diferentes tipos de atendimento previdenciário.
                 </p>
-                <button
-                  type="button"
-                  onClick={abrirNovoKit}
-                  className="self-start sm:self-auto inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 rounded-lg text-xs font-semibold text-slate-950 bg-amber-400 hover:bg-amber-300 transition-colors whitespace-nowrap shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Criar Novo Kit</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmarPurge(true)}
+                    className="self-start sm:self-auto inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 rounded-lg text-xs font-semibold text-red-400 bg-red-950/40 hover:bg-red-900/40 border border-red-500/30 transition-colors whitespace-nowrap shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Excluir Todos os Modelos e Kits do Supabase</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={abrirNovoKit}
+                    className="self-start sm:self-auto inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 rounded-lg text-xs font-semibold text-slate-950 bg-amber-400 hover:bg-amber-300 transition-colors whitespace-nowrap shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Criar Novo Kit</span>
+                  </button>
+                </div>
               </div>
+
+              {confirmarPurge && (
+                <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-md w-full space-y-4">
+                    <div className="flex items-center gap-3 text-red-400">
+                      <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0">
+                        <Trash2 className="w-5 h-5" />
+                      </div>
+                      <h2 className="text-lg font-semibold text-white">
+                        Confirmar Exclusão Total
+                      </h2>
+                    </div>
+                    <p className="text-sm text-slate-300">
+                      Tem certeza absoluta que deseja excluir <strong className="text-white">todos os kits, modelos e cláusulas</strong> do Supabase? Esta ação é irreversível.
+                    </p>
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmarPurge(false)}
+                        disabled={salvando}
+                        className="px-4 py-2 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePurgeCatalog}
+                        disabled={salvando}
+                        className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors disabled:opacity-50"
+                      >
+                        {salvando ? 'Excluindo...' : 'Sim, Excluir Tudo'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {kitFormAberto && (
                 <form
