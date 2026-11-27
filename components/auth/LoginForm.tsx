@@ -103,7 +103,7 @@ export function LoginForm({ supabaseConectado }: LoginFormProps) {
       <div className="mx-auto w-full max-w-md">
         <div className="flex justify-center mb-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-jf.png" alt="Josenildson Ferreira Advogados" className="h-16 w-auto" />
+          <img src="/logo-jf.svg" alt="Josenildson Ferreira Advogados" className="h-16 w-auto" />
         </div>
         <h1 className="text-center text-3xl text-amber-300 text-balance">
           Gerador de Documentos
